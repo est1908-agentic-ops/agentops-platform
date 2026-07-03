@@ -1,0 +1,6 @@
+# SOPS configuration — age recipients and enforced encryption paths.
+# Replace the placeholder recipient with the real platform age public key during M2 (docs/BOOTSTRAP.md step 2).
+# RULE: everything under secrets/ MUST be encrypted; CI should reject plaintext there.
+creation_rules:
+  - path_regex: ^secrets/.*\.(yaml|yml|json|env)$
+    age: "age1PLACEHOLDER_REPLACE_DURING_M2"

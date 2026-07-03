@@ -1,0 +1,3 @@
+# never allow plaintext key material
+*.agekey
+*.pem

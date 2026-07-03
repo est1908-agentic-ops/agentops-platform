@@ -1,0 +1,19 @@
+# ArgoCD app-of-apps entrypoint — to be completed during M2 (docs/BOOTSTRAP.md step 4).
+# Applied once manually; afterwards ArgoCD manages everything, including itself.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: "<agentops-platform repo URL — set during M2>"
+    targetRevision: main
+    path: clusters/ops
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
