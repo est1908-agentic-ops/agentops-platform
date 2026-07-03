@@ -7,7 +7,7 @@ spec:
   project: default
   sources:
     - repoURL: https://github.com/flair-hr/agentops-engine.git
-      targetRevision: main
+      targetRevision: CHANGEME
       path: charts/engine
       helm:
         releaseName: engine

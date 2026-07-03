@@ -1,15 +1,14 @@
 namespace: dev-agents
 
-# Dev cluster: rolling :main tags (updated by agentops-engine CI on every merge
-# to main). Immutable <git-sha> tags are also pushed for ops/rollback.
-# After an engine merge, restart the worker — the tag string does not change,
-# so ArgoCD will not resync on its own:
-#   kubectl rollout restart deployment/engine-worker -n dev-agents
+# image.workerTag / image.agentClaudeTag / chart targetRevision are bumped
+# automatically by agentops-engine CI on every merge to main (see that repo's
+# scripts/bump-platform-engine-tags.sh). Do not edit the tag fields by hand
+# unless overriding for a one-off deploy.
 image:
   repository: ghcr.io/flair-hr/agentops-engine
-  workerTag: main
-  agentClaudeTag: main
-  pullPolicy: Always
+  workerTag: CHANGEME
+  agentClaudeTag: CHANGEME
+  pullPolicy: IfNotPresent
 
 temporalAddress: "temporal-frontend.platform.svc.cluster.local:7233"
 
