@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: engine
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://github.com/flair-hr/agentops-engine.git
+      targetRevision: CHANGEME
+      path: charts/engine
+      helm:
+        releaseName: engine
+        valueFiles:
+          - $values/clusters/ops/engine/values.yaml
+    - repoURL: https://github.com/flair-hr/agentops-platform.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dev-agents
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

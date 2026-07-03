@@ -33,7 +33,8 @@ clusters/
                             #   temporal, postgres, litellm, lgtm (alloy/
                             #   prometheus/loki/tempo/grafana), argocd,
                             #   step-ca, technitium, mailpit, glitchtip
-    engine/                 # engine chart values + pinned image tags
+    engine/                 # engine chart values + pinned image tags (tags bumped
+                            #   automatically by agentops-engine CI on merge)
     products/               # product registry: one Application per product →
                             #   points at the product repo's /deploy path;
                             #   namespace, quotas, DNS subzone

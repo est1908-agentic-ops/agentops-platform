@@ -8,3 +8,4 @@ resources:
   - platform/postgres/application.yaml
   - platform/temporal/application.yaml
   - platform/namespaces/application.yaml
+  - engine/application.yaml
