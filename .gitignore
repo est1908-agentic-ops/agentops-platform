@@ -1,3 +1,6 @@
 # never allow plaintext key material
 *.agekey
 *.pem
+
+# kustomize helmCharts cache (local render only)
+**/charts/

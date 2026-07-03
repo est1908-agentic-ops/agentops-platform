@@ -1,19 +1,20 @@
-# ArgoCD app-of-apps entrypoint. Applied once by bootstrap.sh;
-# afterwards ArgoCD manages everything, including itself.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: root
+  name: step-ca
   namespace: argocd
 spec:
   project: default
   source:
-    repoURL: "https://github.com/flair-hr/agentops-platform.git"
+    repoURL: https://github.com/flair-hr/agentops-platform.git
     targetRevision: main
-    path: clusters/ops
+    path: clusters/ops/platform/step-ca
   destination:
     server: https://kubernetes.default.svc
+    namespace: step-ca
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

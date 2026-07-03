@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - platform/cert-manager/application.yaml
+  - platform/step-ca/application.yaml
+  - platform/technitium/application.yaml
+  - platform/postgres/application.yaml
+  - platform/temporal/application.yaml
+  - platform/namespaces/application.yaml

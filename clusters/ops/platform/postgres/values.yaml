@@ -1,0 +1,14 @@
+# bitnami/postgresql values. auth.existingSecret defers the actual
+# password to the KSOPS-decrypted secret this component's
+# kustomization also generates (secret-generator.yaml) — never a
+# plaintext password in this file.
+auth:
+  username: temporal
+  database: temporal
+  existingSecret: postgres-credentials
+  secretKeys:
+    userPasswordKey: password
+architecture: standalone
+primary:
+  persistence:
+    size: 8Gi

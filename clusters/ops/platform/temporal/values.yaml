@@ -1,0 +1,43 @@
+server:
+  config:
+    persistence:
+      defaultStore: default
+      default:
+        driver: "sql"
+        sql:
+          driver: "postgres"
+          host: "postgres-postgresql.platform.svc.cluster.local"
+          port: 5432
+          database: "temporal"
+          user: "temporal"
+          existingSecret: "postgres-credentials"
+      visibility:
+        driver: "sql"
+        sql:
+          driver: "postgres"
+          host: "postgres-postgresql.platform.svc.cluster.local"
+          port: 5432
+          database: "temporal_visibility"
+          user: "temporal"
+          existingSecret: "postgres-credentials"
+
+# No bundled datastores — we point at the Postgres component (Task 4) instead.
+cassandra:
+  enabled: false
+mysql:
+  enabled: false
+elasticsearch:
+  enabled: false
+
+# LGTM/observability stack is M4+ (design doc non-goals) — don't let
+# this chart's bundled monitoring subcharts jump ahead of that.
+prometheus:
+  enabled: false
+grafana:
+  enabled: false
+
+web:
+  ingress:
+    enabled: true
+    hosts:
+      - "temporal.lab"

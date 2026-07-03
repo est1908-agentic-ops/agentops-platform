@@ -3,4 +3,4 @@
 # RULE: everything under secrets/ MUST be encrypted; CI should reject plaintext there.
 creation_rules:
   - path_regex: ^secrets/.*\.(yaml|yml|json|env)$
-    age: "age1PLACEHOLDER_REPLACE_DURING_M2"
+    age: "age1x5del8md896v3a53z89hss5ktjd0qq4cqlazjd6dkvewjxwy4ufse75yjy"

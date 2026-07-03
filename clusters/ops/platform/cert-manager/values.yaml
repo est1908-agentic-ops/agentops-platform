@@ -1,0 +1,5 @@
+# cert-manager Helm values. crds.enabled installs the CRDs this chart
+# needs (ClusterIssuer, Certificate, etc.) as part of the release,
+# so no separate manual `kubectl apply` of CRDs is needed.
+crds:
+  enabled: true

@@ -1,0 +1,13 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agent-egress
+  namespace: dev-agents
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to: [{}] # DNS — refined to kube-dns/Technitium specifically during implementation
+      ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
+    - to: [] # github.com, api.anthropic.com — CIDR/FQDN egress rules filled in during implementation;
+             # k3s's default CNI (flannel) doesn't enforce NetworkPolicy on its own, noted as a risk below

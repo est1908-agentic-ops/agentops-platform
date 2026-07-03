@@ -1,0 +1,11 @@
+# step-ca (smallstep/step-certificates) Helm values. Standalone CA
+# with an ACME provisioner enabled, so cert-manager can request
+# certs from it exactly like it would from a public ACME CA.
+inject:
+  config:
+    files:
+      ca.json:
+        acme:
+          provisioners:
+            - type: ACME
+              name: acme

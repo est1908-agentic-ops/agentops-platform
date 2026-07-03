@@ -2,6 +2,8 @@
 
 Target procedure for milestone M2. This document is a **specification to be filled in during M2 implementation** — every step must end up copy-pasteable. The M2 gate is: follow this doc once on a fresh host with no improvisation.
 
+**Operator runbook:** for step-by-step commands to deploy to a real cluster, see [DEPLOY.md](DEPLOY.md) (`flair-hr/agentops-platform`).
+
 ## Provisioning approach (decided)
 
 **No Ansible for now.** The pre-GitOps surface is five steps on one host; everything after is ArgoCD's job. Deliverables in `bootstrap/`:
@@ -13,11 +15,11 @@ The host is cattle: age key backup + these two repos + nightly pg_dump = full re
 
 ## Order of operations
 
-1. **Host prep** (`bootstrap/bootstrap.sh` / `cloud-init.yaml`, to be written): Linux host (local or VPS), open ports, install k3s (Traefik bundled). Single node.
-2. **Age key**: generate the platform age keypair; private key goes to the host (and an offline admin backup), *never* into git. Public key → `.sops.yaml` recipients.
-3. **ArgoCD**: install via Helm with the KSOPS/helm-secrets repo-server patch so ArgoCD can decrypt SOPS secrets; create the age key secret in the `argocd` namespace.
-4. **Root app**: `kubectl apply -f bootstrap/root-app.yaml` — the app-of-apps pointing at `clusters/ops/`. From here on, ArgoCD reconciles everything; no further manual applies.
-5. **Platform components** come up in dependency order (ArgoCD sync waves): Postgres → Temporal → Technitium + step-ca + cert-manager → LGTM (Alloy, Prometheus, Loki, Tempo, Grafana) → LiteLLM → MailPit → GlitchTip.
+1. **Host prep** (`bootstrap/bootstrap.sh` / `bootstrap/cloud-init.yaml`, done): Linux host (local or VPS) — run `sudo bootstrap/bootstrap.sh` (reads the age private key from stdin, or pass `--age-key-file <path>`), or paste `bootstrap/cloud-init.yaml` into a fresh VPS's user-data (after replacing the age-key template with your real private key — never commit it). Installs k3s (Traefik bundled), single node. See [DEPLOY.md](DEPLOY.md).
+2. **Age key**: `age-keygen -o age.key` generates the platform keypair. Back up `age.key`'s contents to at least one offline location (password manager entry, encrypted USB — whatever you already trust) *before* it touches the host — this is the one point of failure for every secret in this repo, per the rebuild story below. Never commit the private key. Its public key line (`# public key: age1...`) replaces `.sops.yaml`'s `age1PLACEHOLDER_REPLACE_DURING_M2`. The private key itself is what `bootstrap.sh --age-key-file age.key` (or stdin) places at `/var/lib/agentops/age.key` on the host.
+3. **ArgoCD**: `bootstrap.sh` installs it via Helm with `bootstrap/argocd-values.yaml`'s KSOPS repo-server patch (pinned `viaductoss/ksops:v4.5.1`) so ArgoCD can decrypt SOPS secrets, then creates the `sops-age` secret in the `argocd` namespace from the placed age key. Idempotent — re-running `bootstrap.sh` skips both if already done.
+4. **Root app**: `bootstrap.sh` runs `kubectl apply -f bootstrap/root-app.yaml` — the app-of-apps pointing at `clusters/ops/` on `https://github.com/flair-hr/agentops-platform.git`. From here on, ArgoCD reconciles everything; no further manual applies.
+5. **Platform components**: `cert-manager` → `step-ca` (needs cert-manager's CRDs) → `Technitium`/`Postgres`/`Temporal` (no ordering dependency between these three) → `dev-agents` namespace. See `clusters/ops/platform/*/application.yaml` for the actual ArgoCD Applications — LGTM/LiteLLM/MailPit/GlitchTip are M4+, not part of this set yet.
 6. **DNS cutover**: point the workstation/router at Technitium for the internal zone (`*.lab` or chosen zone); trust the step-ca root cert on admin machines.
 7. **Engine**: `clusters/ops/engine` values reference images published by `agentops-engine` CI; worker Deployment + agent-runner Job templates + NetworkPolicies.
 8. **Secrets**: SOPS-encrypt model tokens (`claude setup-token` output, `CURSOR_API_KEY`, z.ai, codex auth) and forge credentials into `secrets/`; verify runner Jobs can consume them and that egress NetworkPolicies restrict each runner to its provider + forge + LiteLLM.
