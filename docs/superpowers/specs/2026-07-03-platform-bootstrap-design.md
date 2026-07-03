@@ -18,6 +18,7 @@ This is the one M2 sub-project with zero dependency on any other — it's what e
 - The Applications ArgoCD reconciles once bootstrapped (Temporal, step-ca, Technitium, Postgres) — [platform components](2026-07-03-platform-components-design.md)'s job entirely; this doc stops at a working, empty-ish ArgoCD.
 - Multi-node, HA control plane — single node per ARCHITECTURE.md §5.1, unchanged.
 - Terraform/OpenTofu VPS provisioning — `docs/BOOTSTRAP.md` already defers this ("optional and deferred"); this doc assumes a host already exists (cloud console click, or a local box) and starts from there.
+- GitHub Actions self-hosted runner install/config — operator-managed, out of scope for `bootstrap.sh`. Decided to run on the host directly rather than as a k3s workload (see `docs/BOOTSTRAP.md`'s "Decisions already made"); this doc's k3s/ArgoCD scope is unaffected either way.
 
 ## Design
 
