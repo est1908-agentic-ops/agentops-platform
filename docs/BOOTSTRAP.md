@@ -2,9 +2,18 @@
 
 Target procedure for milestone M2. This document is a **specification to be filled in during M2 implementation** — every step must end up copy-pasteable. The M2 gate is: follow this doc once on a fresh host with no improvisation.
 
+## Provisioning approach (decided)
+
+**No Ansible for now.** The pre-GitOps surface is five steps on one host; everything after is ArgoCD's job. Deliverables in `bootstrap/`:
+
+- `bootstrap.sh` — idempotent, re-runnable script: OS packages → k3s install (official installer, Traefik bundled) → place age key (from stdin/file, never committed) → ArgoCD install with KSOPS repo-server patch → apply `root-app.yaml`. Each step checks before acting.
+- `cloud-init.yaml` — user-data template embedding the same script, so a fresh VPS (Ubuntu LTS/Debian) boots directly into a ready platform.
+
+The host is cattle: age key backup + these two repos + nightly pg_dump = full rebuild (~30 min) — that *is* the M2 gate. Revisit Ansible only when per-product prod hosts multiply or host-level config management (hardening, users) grows beyond the script; the same steps then move into a playbook unchanged. Terraform/OpenTofu for VPS *creation* is optional and deferred likewise.
+
 ## Order of operations
 
-1. **Host prep** (`bootstrap/k3s-install.md`, to be written): Linux host (local or VPS), open ports, install k3s (Traefik bundled). Single node.
+1. **Host prep** (`bootstrap/bootstrap.sh` / `cloud-init.yaml`, to be written): Linux host (local or VPS), open ports, install k3s (Traefik bundled). Single node.
 2. **Age key**: generate the platform age keypair; private key goes to the host (and an offline admin backup), *never* into git. Public key → `.sops.yaml` recipients.
 3. **ArgoCD**: install via Helm with the KSOPS/helm-secrets repo-server patch so ArgoCD can decrypt SOPS secrets; create the age key secret in the `argocd` namespace.
 4. **Root app**: `kubectl apply -f bootstrap/root-app.yaml` — the app-of-apps pointing at `clusters/ops/`. From here on, ArgoCD reconciles everything; no further manual applies.
