@@ -5,7 +5,7 @@ namespace: dev-agents
 # scripts/bump-platform-engine-tags.sh). Do not edit the tag fields by hand
 # unless overriding for a one-off deploy.
 image:
-  repository: ghcr.io/flair-hr/agentops-engine
+  repository: gitactions.est1908.top/agentic-ops
   workerTag: "dcf3d060900c83a830c6bd5eff7f760f902d7b5a"
   agentClaudeTag: "dcf3d060900c83a830c6bd5eff7f760f902d7b5a"
   pullPolicy: IfNotPresent
@@ -13,3 +13,4 @@ image:
 temporalAddress: "temporal-frontend.platform.svc.cluster.local:7233"
 
 githubTokenSecretName: github-token
+imagePullSecretName: registry-credentials
