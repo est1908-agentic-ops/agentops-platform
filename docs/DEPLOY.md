@@ -426,6 +426,15 @@ kubectl -n dev-agents create secret generic github-token \
 
 (A PAT or GitHub App token with repo write access to whichever test repo you point the engine at — same one M1 used.)
 
+> The engine chart references `GITHUB_TOKEN` as a **required** env var (a
+> non-optional `secretKeyRef`), so the Secret must exist or the worker pod stays
+> in `CreateContainerConfigError`. The value is only *used* when an agent opens a
+> PR at the end of a task. If you only need to bring the platform up / run the M2
+> gate and don't need PR-opening yet, a placeholder value is fine:
+> `--from-literal=GITHUB_TOKEN=placeholder-unused`. Making the token genuinely
+> optional (it arguably belongs to a future component, not the engine) is an
+> `agentops-engine` chart change.
+
 ### 6.2 Create the Claude auth Secret
 
 Key name is `CLAUDE_CODE_OAUTH_TOKEN`, Secret name matches the chart's `claudeAuthSecretName` value (default `claude-credentials`):
