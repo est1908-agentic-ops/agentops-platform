@@ -119,18 +119,14 @@ place_age_key() {
 }
 
 install_argocd() {
-  if helm status argocd -n "${ARGOCD_NAMESPACE}" >/dev/null 2>&1; then
-    log "ArgoCD already installed"
-  else
-    log "Installing ArgoCD with KSOPS-patched repo-server"
-    helm repo add argo https://argoproj.github.io/argo-helm >/dev/null
-    helm repo update argo >/dev/null
-    helm install argocd argo/argo-cd \
-      --namespace "${ARGOCD_NAMESPACE}" \
-      --create-namespace \
-      --version 10.1.1 \
-      -f "${SCRIPT_DIR}/argocd-values.yaml"
-  fi
+  log "Installing/upgrading ArgoCD with KSOPS-patched repo-server"
+  helm repo add argo https://argoproj.github.io/argo-helm >/dev/null
+  helm repo update argo >/dev/null
+  helm upgrade --install argocd argo/argo-cd \
+    --namespace "${ARGOCD_NAMESPACE}" \
+    --create-namespace \
+    --version 10.1.1 \
+    -f "${SCRIPT_DIR}/argocd-values.yaml"
 
   log "Waiting for argocd-repo-server rollout"
   kubectl -n "${ARGOCD_NAMESPACE}" rollout status deployment/argocd-repo-server --timeout=300s

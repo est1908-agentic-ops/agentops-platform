@@ -6,9 +6,20 @@ configs:
     kustomize.buildOptions: "--enable-alpha-plugins --enable-exec --enable-helm"
 
 repoServer:
+  # KSOPS needs the age *identity* to decrypt secrets/**/*.enc.yaml. The ksops
+  # binary mounts below only install the plugin; without the private key wired in,
+  # SOPS fails with "Error getting data key: 0 successful groups required, got 0"
+  # and every KSOPS-generated Secret (e.g. postgres-credentials) fails to render.
+  # The `sops-age` Secret (key: key.txt) is created during bootstrap Phase 1.
+  env:
+    - name: SOPS_AGE_KEY_FILE
+      value: /home/argocd/.config/sops/age/key.txt
   volumes:
     - name: custom-tools
       emptyDir: {}
+    - name: sops-age
+      secret:
+        secretName: sops-age
   initContainers:
     - name: install-ksops
       image: viaductoss/ksops:v4.5.1
@@ -23,3 +34,16 @@ repoServer:
     - mountPath: /usr/local/bin/ksops
       name: custom-tools
       subPath: ksops
+    # kustomize's generator-plugin loader resolves `apiVersion: viaduct.ai/v1,
+    # kind: ksops` (see clusters/ops/platform/postgres/secret-generator.yaml)
+    # by searching $XDG_CONFIG_HOME/kustomize/plugin/<apiVersion>/<kind>/<Kind>
+    # — an entirely separate lookup from $PATH. The /usr/local/bin mount above
+    # does not satisfy it; verified locally that placing the binary here is
+    # what actually makes the generator resolve.
+    - mountPath: /home/argocd/.config/kustomize/plugin/viaduct.ai/v1/ksops/ksops
+      name: custom-tools
+      subPath: ksops
+    # age private key for KSOPS/SOPS decryption (matches SOPS_AGE_KEY_FILE above).
+    - mountPath: /home/argocd/.config/sops/age
+      name: sops-age
+      readOnly: true

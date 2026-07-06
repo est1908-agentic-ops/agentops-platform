@@ -6,14 +6,17 @@ metadata:
 spec:
   project: default
   sources:
-    - repoURL: https://github.com/flair-hr/agentops-engine.git
-      targetRevision: CHANGEME
-      path: charts/engine
+    # repoURL must be the full OCI path to the chart artifact (…/agentic-ops/engine).
+    # ArgoCD resolves the chart tag against repoURL directly and does NOT append the
+    # `chart` field to it, so a bare …/agentic-ops resolves the wrong artifact and 404s.
+    - repoURL: oci://gitactions.est1908.top/agentic-ops/engine
+      chart: engine
+      targetRevision: "0.0.0-967864f1102ad4082b4f0c26c5026d9a0111514b"
       helm:
         releaseName: engine
         valueFiles:
           - $values/clusters/ops/engine/values.yaml
-    - repoURL: https://github.com/flair-hr/agentops-platform.git
+    - repoURL: git@github.com:flair-hr/agentops-platform.git
       targetRevision: main
       ref: values
   destination:

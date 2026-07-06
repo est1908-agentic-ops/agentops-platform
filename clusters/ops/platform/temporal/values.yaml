@@ -1,11 +1,20 @@
 server:
+  # The server image is temporalio/server:1.30.3. Temporal 1.30+ images use
+  # built-in sprig templating and read the config from the path in
+  # TEMPORAL_SERVER_CONFIG_FILE_PATH; the chart's default "dockerize" config
+  # method targets <=1.29.x images and is silently ignored by 1.30.x, which then
+  # falls back to its embedded (Cassandra-default) template and fails to boot
+  # with "Persistence.DataStores[default].Cassandra.Hosts: zero value".
+  # Use the sprig config ConfigMap and have the chart set the config-file path.
+  configMapsToMount: "sprig"
+  setConfigFilePath: true
   config:
     persistence:
       defaultStore: default
       default:
         driver: "sql"
         sql:
-          driver: "postgres"
+          driver: "postgres12"
           host: "postgres-postgresql.platform.svc.cluster.local"
           port: 5432
           database: "temporal"
@@ -14,7 +23,7 @@ server:
       visibility:
         driver: "sql"
         sql:
-          driver: "postgres"
+          driver: "postgres12"
           host: "postgres-postgresql.platform.svc.cluster.local"
           port: 5432
           database: "temporal_visibility"

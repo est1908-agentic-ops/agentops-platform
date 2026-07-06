@@ -21,11 +21,30 @@ This repo *is* the GitOps source of truth ArgoCD watches — not where applicati
 
 Merging a PR to `main` is what changes the cluster; there is no other path.
 
+## Deploy to a VPS
+
+Fresh Ubuntu 22.04/24.04 or Debian 12+, ≥4 GB RAM / ≥40 GB disk. Two ways to bootstrap:
+
+**A. Manual (existing VM / SSH session):** this is a private repo, so the host needs a read-only [deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys) to clone it — see [docs/DEPLOY.md](docs/DEPLOY.md) Phase 1A for generating and registering one. Once you have it on the host:
+
+```bash
+GIT_SSH_COMMAND="ssh -i ~/.ssh/agentops-platform-deploy-key -o IdentitiesOnly=yes" \
+  git clone git@github.com:flair-hr/agentops-platform.git ~/agentops-platform
+cd ~/agentops-platform
+# copy your age.key to the host too (scp, etc.) — never commit it
+sudo ./bootstrap/bootstrap.sh --age-key-file /path/to/age.key
+```
+
+**B. Cloud-init (fresh VPS):** paste `bootstrap/cloud-init.yaml` (with your real age private key filled in) into the provider's user-data field at VM creation — the host boots straight into a working platform, no SSH step needed.
+
+Either path installs k3s (Traefik bundled) + ArgoCD with KSOPS, then ArgoCD takes over reconciling everything else from this repo. Re-running `bootstrap.sh` is safe (idempotent). Full prerequisites, one-time repo prep (age key, SOPS recipient, Postgres secret), and post-sync steps: see [docs/DEPLOY.md](docs/DEPLOY.md).
+
 ## Layout
 
 ```
 bootstrap/                  # everything before ArgoCD manages itself
-  k3s-install.md            # host prep (written during M2)
+  bootstrap.sh              # idempotent host bootstrap: k3s + ArgoCD + KSOPS
+  cloud-init.yaml           # same bootstrap, embedded as VPS user-data
   root-app.yaml             # ArgoCD app-of-apps entrypoint
 clusters/
   ops/                      # the shared agent-ops cluster
@@ -48,4 +67,4 @@ secrets/                    # SOPS-encrypted only
 
 ## Status
 
-Pre-M2 skeleton. This repo becomes active at milestone **M2** (see `agentops-engine/docs/MILESTONES.md`); until then only docs and structure live here. The M2 gate: a wiped host rebuilds to a working platform from these two repos, following docs/BOOTSTRAP.md with no improvisation.
+Milestone **M2** (see `agentops-engine/docs/MILESTONES.md`): bootstrap (`bootstrap.sh`/`cloud-init.yaml`) and all platform components (cert-manager, step-ca, Technitium, Postgres, Temporal) are implemented and merged to `main`. Engine deployment (`clusters/ops/engine/`) is wired but not yet exercised on a real host — see [docs/DEPLOY.md](docs/DEPLOY.md) Phase 6 for current blockers. The M2 gate: a wiped host rebuilds to a working platform from these two repos, following docs/BOOTSTRAP.md with no improvisation — not yet run for real.

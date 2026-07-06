@@ -7,16 +7,20 @@ namespace: dev-agents
 #
 # agentClaudeTag was renamed to agentRunnerTag (2026-07-06): claude and pi now
 # share one image (agentops-engine ARCHITECTURE.md §5.4) instead of one per
-# backend — images/agent-claude/ no longer exists in that repo.
+# backend — images/agent-claude/ no longer exists in that repo. Its value
+# carries forward the last real agentClaudeTag bump, since it's the same
+# underlying build. gatewayTag is new and has no prior bump to inherit, so it
+# stays CHANGEME until the next agentops-engine CI run sets a real value.
 image:
-  repository: ghcr.io/flair-hr/agentops-engine
-  workerTag: CHANGEME
-  agentRunnerTag: CHANGEME
+  repository: gitactions.est1908.top/agentic-ops
+  workerTag: "967864f1102ad4082b4f0c26c5026d9a0111514b"
+  agentRunnerTag: "967864f1102ad4082b4f0c26c5026d9a0111514b"
   gatewayTag: CHANGEME
   pullPolicy: IfNotPresent
 
 temporalAddress: "temporal-frontend.platform.svc.cluster.local:7233"
 
 githubTokenSecretName: github-token
+imagePullSecretName: registry-credentials
 claudeAuthSecretName: claude-credentials
 piAuthSecretName: pi-credentials
