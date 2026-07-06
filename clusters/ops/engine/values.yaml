@@ -6,8 +6,8 @@ namespace: dev-agents
 # unless overriding for a one-off deploy.
 image:
   repository: gitactions.est1908.top/agentic-ops
-  workerTag: "73536085f8a6ff8b9e5af33bed5585edcd25d502"
-  agentClaudeTag: "73536085f8a6ff8b9e5af33bed5585edcd25d502"
+  workerTag: "967864f1102ad4082b4f0c26c5026d9a0111514b"
+  agentClaudeTag: "967864f1102ad4082b4f0c26c5026d9a0111514b"
   pullPolicy: IfNotPresent
 
 temporalAddress: "temporal-frontend.platform.svc.cluster.local:7233"
