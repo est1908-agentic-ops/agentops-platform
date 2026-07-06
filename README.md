@@ -25,12 +25,13 @@ Merging a PR to `main` is what changes the cluster; there is no other path.
 
 Fresh Ubuntu 22.04/24.04 or Debian 12+, ≥4 GB RAM / ≥40 GB disk. Two ways to bootstrap:
 
-**A. Manual (existing VM / SSH session):**
+**A. Manual (existing VM / SSH session):** this is a private repo, so the host needs a read-only [deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys) to clone it — see [docs/DEPLOY.md](docs/DEPLOY.md) Phase 1A for generating and registering one. Once you have it on the host:
 
 ```bash
-git clone https://github.com/flair-hr/agentops-platform.git /opt/agentops-platform
-cd /opt/agentops-platform
-# copy your age.key to the host first (scp, etc.) — never commit it
+GIT_SSH_COMMAND="ssh -i ~/.ssh/agentops-platform-deploy-key -o IdentitiesOnly=yes" \
+  git clone git@github.com:flair-hr/agentops-platform.git ~/agentops-platform
+cd ~/agentops-platform
+# copy your age.key to the host too (scp, etc.) — never commit it
 sudo ./bootstrap/bootstrap.sh --age-key-file /path/to/age.key
 ```
 

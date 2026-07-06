@@ -185,13 +185,29 @@ Choose **A** (manual script) or **B** (cloud-init). Do not run both on the same 
 
 ### A. Manual bootstrap (existing VM or SSH session)
 
-On the host:
+`agentops-platform` is a **private** repo, so the host needs its own read-only credential to clone it. A deploy key is the right tool here — scoped to exactly this repo, read-only, no dependency on any person's GitHub account (same reasoning as `agentops-engine`'s `bump-platform` CI, which uses one for write access; this one only needs read).
+
+**Generate and register the deploy key** (once, from your workstation):
 
 ```bash
-git clone https://github.com/flair-hr/agentops-platform.git /opt/agentops-platform
-cd /opt/agentops-platform
+ssh-keygen -t ed25519 -f agentops-platform-deploy-key -N ""
+```
 
-# Copy age.key to the host securely (scp, etc.) — never commit it
+Add the **public** key (`agentops-platform-deploy-key.pub`) at `flair-hr/agentops-platform` → Settings → Deploy keys → Add deploy key. Leave "Allow write access" **unchecked** — the host only reads.
+
+**On the host:**
+
+```bash
+# Copy agentops-platform-deploy-key (private half) and age.key to the host
+# securely (scp, etc.) — never commit either
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+# (after copying the private key to ~/.ssh/agentops-platform-deploy-key)
+chmod 600 ~/.ssh/agentops-platform-deploy-key
+
+GIT_SSH_COMMAND="ssh -i ~/.ssh/agentops-platform-deploy-key -o IdentitiesOnly=yes" \
+  git clone git@github.com:flair-hr/agentops-platform.git ~/agentops-platform
+cd ~/agentops-platform
+
 sudo ./bootstrap/bootstrap.sh --age-key-file /path/to/age.key
 ```
 
