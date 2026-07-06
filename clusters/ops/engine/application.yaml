@@ -13,7 +13,7 @@ spec:
         releaseName: engine
         valueFiles:
           - $values/clusters/ops/engine/values.yaml
-    - repoURL: https://github.com/flair-hr/agentops-platform.git
+    - repoURL: git@github.com:flair-hr/agentops-platform.git
       targetRevision: main
       ref: values
   destination:
