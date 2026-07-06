@@ -4,7 +4,8 @@ metadata:
   name: step-ca
 spec:
   acme:
-    server: https://step-certificates.step-ca.svc.cluster.local:9000/acme/acme/directory
+    # The step-certificates Service exposes 443 -> pod's 9000; use the Service port (443), not the pod port.
+    server: https://step-certificates.step-ca.svc.cluster.local/acme/acme/directory
     skipTLSVerify: true # step-ca's own cert isn't yet trusted by cert-manager's ACME client; revisit once cert-manager trusts step-ca's root
     privateKeySecretRef:
       name: step-ca-acme-account-key
