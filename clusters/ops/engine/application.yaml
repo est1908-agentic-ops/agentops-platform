@@ -6,9 +6,9 @@ metadata:
 spec:
   project: default
   sources:
-    - repoURL: https://github.com/flair-hr/agentops-engine.git
-      targetRevision: dcf3d060900c83a830c6bd5eff7f760f902d7b5a
-      path: charts/engine
+    - repoURL: oci://gitactions.est1908.top/agentic-ops
+      chart: engine
+      targetRevision: "0.0.0-dcf3d060900c83a830c6bd5eff7f760f902d7b5a"
       helm:
         releaseName: engine
         valueFiles:

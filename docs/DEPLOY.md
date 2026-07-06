@@ -389,15 +389,15 @@ Expect `root` to flip to `Synced` and the six child Applications (`cert-manager`
 
 ## Phase 6 — Deploy the engine
 
-The `engine` Application (`clusters/ops/engine/`) points at `agentops-engine`'s `charts/engine` and deploys the Temporal worker + wires `runAgent` to launch `agent-claude` as a K8s Job in `dev-agents`.
+The `engine` Application (`clusters/ops/engine/`) deploys the Temporal worker + wires `runAgent` to launch `agent-claude` as a K8s Job in `dev-agents`. Its Helm chart is pulled as an **OCI artifact** from `oci://gitactions.est1908.top/agentic-ops` (`chart: engine`) — not from `agentops-engine`'s git repo — so ArgoCD needs no git credential for `agentops-engine` at all, only the registry credential in 6.2.6.
 
 **Do not sync this yet if the blocker below is unresolved** — the worker will come up but every real task will fail.
 
 ### 6.0 Status (as of 2026-07-06)
 
 - ~~No auth secret wired for `agent-claude` Jobs~~ — **fixed**: `claudeAuthSecretName` chart value (default `claude-credentials`) + `CLAUDE_AUTH_SECRET_NAME` env var wire `authSecretName` into every `claude` `K8sJobRunner`/Job pod (`agentops-engine#4`).
-- Images now come from a **self-hosted registry** (`gitactions.est1908.top/agentic-ops`), not GHCR. Since it's basic-auth-gated, both the worker Deployment and every `agent-claude` Job pod need an `imagePullSecrets` entry (`imagePullSecretName` chart value, default `registry-credentials`) — see 6.2.5.
-- ~~`bump-platform` CI job fails~~ — **fixed**: swapped `PLATFORM_REPO_TOKEN` (a PAT that never had real access) for a write-enabled deploy key scoped to this repo (`agentops-engine#6`), and fixed a Python regex crash the auth failure had been masking (`agentops-engine#7`). Confirmed working end-to-end: `workerTag`/`agentClaudeTag`/`targetRevision` now auto-bump on every merge to `agentops-engine` main. 6.3 below is now just a sanity check, not a required manual step.
+- Images and the **Helm chart itself** now come from a self-hosted registry (`gitactions.est1908.top/agentic-ops`), not GHCR and not git. `agentops-engine` CI packages `charts/engine` as an OCI artifact (version `0.0.0-<git-sha>`) alongside the `worker`/`agent-claude` images on every merge to `main`. Since it's basic-auth-gated: images need a K8s `imagePullSecrets` entry (6.2.5), and ArgoCD's own chart pull needs a separate Helm-type repository credential (6.2.6) — same underlying username/password, two different consumers.
+- ~~`bump-platform` CI job fails~~ — **fixed**: swapped `PLATFORM_REPO_TOKEN` (a PAT that never had real access) for a write-enabled deploy key scoped to `agentops-platform` (`agentops-engine#6`), and fixed a Python regex crash the auth failure had been masking (`agentops-engine#7`). Confirmed working end-to-end: `workerTag`/`agentClaudeTag`/chart `targetRevision` now auto-bump on every merge to `agentops-engine` main. 6.3 below is now just a sanity check, not a required manual step.
 
 Also confirm before starting: you (or whoever ran the earlier `.sops.yaml`/postgres-secret setup) still has the **age private key** file backed up and accessible — it's required for Phase 1 and isn't recoverable from either repo.
 
@@ -435,13 +435,32 @@ kubectl -n dev-agents create secret docker-registry registry-credentials \
   --docker-password=YOUR_PASSWORD
 ```
 
-### 6.3 Confirm real image tags (sanity check — auto-bump should already have set these)
+### 6.2.6 Register the ArgoCD OCI chart credential
+
+Different from 6.2.5 above — that Secret is for **kubelet** pulling container images; this one is for **ArgoCD's repo-server** pulling the `engine` Helm chart itself, which is also published to `gitactions.est1908.top` (as an OCI artifact, `agentops-engine` CI pushes it alongside the images). Same underlying credentials, different consumer:
+
+```bash
+kubectl -n argocd create secret generic repo-gitactions-registry \
+  --from-literal=type=helm \
+  --from-literal=name=gitactions-registry \
+  --from-literal=url=gitactions.est1908.top/agentic-ops \
+  --from-literal=enableOCI=true \
+  --from-literal=username=YOUR_USERNAME \
+  --from-literal=password=YOUR_PASSWORD
+
+kubectl -n argocd label secret repo-gitactions-registry \
+  argocd.argoproj.io/secret-type=repository
+```
+
+Without this, the `engine` Application's chart source (`oci://gitactions.est1908.top/agentic-ops`, `chart: engine`) can't be pulled — same failure shape as Phase 4's missing git credential (stuck, no error obvious until you check `argocd-repo-server` logs).
+
+### 6.3 Confirm real image tags and chart version (sanity check — auto-bump should already have set these)
 
 ```bash
 grep -n "CHANGEME" clusters/ops/engine/values.yaml clusters/ops/engine/application.yaml
 ```
 
-If anything prints, manually set `workerTag`/`agentClaudeTag` to a real git SHA from `agentops-engine`'s `main` (confirm the matching images exist: `gitactions.est1908.top/agentic-ops/{worker,agent-claude}:<sha>`) and `targetRevision` to that same SHA (or `main`), commit, push.
+If anything prints, manually set `workerTag`/`agentClaudeTag` in `values.yaml` to a real git SHA from `agentops-engine`'s `main` (confirm the matching images exist: `gitactions.est1908.top/agentic-ops/{worker,agent-claude}:<sha>`), and `application.yaml`'s chart `targetRevision` to `"0.0.0-<same sha>"` (confirm that chart version was actually pushed — `agentops-engine`'s `build-images` job pushes it on every merge to `main`), commit, push.
 
 ### 6.4 Watch it sync
 
