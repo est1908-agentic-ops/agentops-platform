@@ -5,7 +5,7 @@ server:
       default:
         driver: "sql"
         sql:
-          driver: "postgres"
+          driver: "postgres12"
           host: "postgres-postgresql.platform.svc.cluster.local"
           port: 5432
           database: "temporal"
@@ -14,7 +14,7 @@ server:
       visibility:
         driver: "sql"
         sql:
-          driver: "postgres"
+          driver: "postgres12"
           host: "postgres-postgresql.platform.svc.cluster.local"
           port: 5432
           database: "temporal_visibility"
