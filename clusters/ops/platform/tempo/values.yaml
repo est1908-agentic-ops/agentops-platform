@@ -1,0 +1,7 @@
+# Chart defaults are already single-binary with local trace storage and
+# OTLP grpc(4317)/http(4318) receivers pre-configured -- only persistence
+# needs turning on (off by default) so trace data survives pod restarts,
+# same reasoning as Postgres/Technitium/Grafana.
+persistence:
+  enabled: true
+  size: 20Gi

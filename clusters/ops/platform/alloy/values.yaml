@@ -1,0 +1,70 @@
+# Two jobs (ARCHITECTURE.md §5.4/§5.6): receive OTLP traces from instrumented
+# workers/agent-runner Jobs and forward to Tempo; tail every pod's container
+# logs cluster-wide and forward to Loki. The chart doesn't expose ports for
+# whatever components the config below defines -- extraPorts does that.
+alloy:
+  configMap:
+    content: |
+      otelcol.receiver.otlp "default" {
+        grpc {
+          endpoint = "0.0.0.0:4317"
+        }
+        http {
+          endpoint = "0.0.0.0:4318"
+        }
+
+        output {
+          traces = [otelcol.exporter.otlp.tempo.input]
+        }
+      }
+
+      otelcol.exporter.otlp "tempo" {
+        client {
+          endpoint = "tempo.platform.svc.cluster.local:4317"
+          tls {
+            insecure = true
+          }
+        }
+      }
+
+      discovery.kubernetes "pods" {
+        role = "pod"
+      }
+
+      discovery.relabel "pods" {
+        targets = discovery.kubernetes.pods.targets
+
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+      }
+
+      loki.source.kubernetes "pods" {
+        targets    = discovery.relabel.pods.output
+        forward_to = [loki.write.default.receiver]
+      }
+
+      loki.write "default" {
+        endpoint {
+          url = "http://loki.platform.svc.cluster.local:3100/loki/api/v1/push"
+        }
+      }
+
+  extraPorts:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP

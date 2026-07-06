@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+helmCharts:
+  # The grafana/helm-charts repo's own chart is `deprecated: true` as of this
+  # pin -- its README states the chart migrated to grafana-community/helm-charts
+  # after 2026-01-30. Pinned there instead, same reasoning as this repo's
+  # earlier move off Bitnami's charts.
+  - name: grafana
+    repo: https://grafana-community.github.io/helm-charts
+    version: 12.7.2
+    releaseName: grafana
+    namespace: platform
+    valuesFile: values.yaml
+
+# grafana-credentials Secret (KSOPS-decrypted) -- admin login, same mechanism
+# as postgres-credentials rather than the chart's own auto-generated password.
+generators:
+  - secret-generator.yaml

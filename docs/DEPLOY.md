@@ -16,7 +16,8 @@ After this runbook:
 
 - k3s (Traefik bundled) + ArgoCD with KSOPS-decrypted SOPS secrets
 - Platform components: cert-manager, step-ca, Technitium DNS, Postgres, Temporal, `dev-agents` namespace
-- Internal hostname example: `temporal.lab` (Ingress + step-ca certs)
+- Observability: Prometheus, Loki, Tempo, Alloy, Grafana, MailPit (Phase 7)
+- Internal hostnames, e.g.: `temporal.lab`, `grafana.lab`, `mail.lab` (Ingress + step-ca certs)
 
 Everything after bootstrap is GitOps — no further `kubectl apply` for platform components.
 
@@ -247,7 +248,8 @@ Expect:
 
 - ArgoCD pods `Running`
 - Application `root` present and moving toward `Synced` / `Healthy`
-- Child Applications appearing: `cert-manager`, `step-ca`, `technitium`, `postgres`, `temporal`, `namespaces`
+- Child Applications appearing: `cert-manager`, `step-ca`, `technitium`, `postgres`, `temporal`, `namespaces`, `prometheus`, `loki`, `tempo`, `alloy`, `grafana`, `mailpit`
+- `grafana` stays `Degraded`/`Unknown` until its encrypted credentials exist — see [Phase 7](#phase-7--deploy-the-observability-stack), same dependency shape as `postgres` above
 
 Watch until stable:
 
@@ -559,6 +561,65 @@ Expect: a real merge-ready PR, with the `claude` invocation for each stage showi
 
 ---
 
+## Phase 7 — Deploy the observability stack
+
+`prometheus`, `loki`, `tempo`, `alloy` sync automatically at Phase 2 with no manual step — none of them need a pre-existing secret. `grafana` needs its admin credentials encrypted first, same dependency shape Postgres has. `mailpit` needs nothing at all; it's already up as soon as `root` syncs.
+
+Design doc: [`docs/superpowers/specs/2026-07-07-observability-stack-design.md`](superpowers/specs/2026-07-07-observability-stack-design.md).
+
+### 7.1 Create and encrypt Grafana credentials
+
+```bash
+cd agentops-platform
+export SOPS_AGE_KEY_FILE=/path/to/age.key
+
+PASSWORD="$(openssl rand -base64 24)"
+cat > secrets/grafana/grafana-credentials.enc.yaml <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grafana-credentials
+  namespace: platform
+stringData:
+  admin-user: admin
+  admin-password: "${PASSWORD}"
+EOF
+
+sops --encrypt --in-place secrets/grafana/grafana-credentials.enc.yaml
+git add secrets/grafana/grafana-credentials.enc.yaml
+git commit -m "chore: add encrypted grafana credentials"
+git push origin main
+```
+
+Store the password somewhere safe — it's the only way into `https://grafana.lab` until you set up OIDC (ARCHITECTURE.md §5.10 defers that past v0).
+
+### 7.2 Confirm the stack is healthy
+
+```bash
+kubectl get applications -n argocd | grep -E 'prometheus|loki|tempo|alloy|grafana|mailpit'
+```
+
+All six should reach `Synced`/`Healthy` (`grafana` only after 7.1). Then, same DNS step as Technitium's `temporal.lab` record (Phase 3.2), add A records for `grafana.lab` and `mail.lab` pointed at Traefik's IP.
+
+```bash
+curl -I https://grafana.lab   # expect Grafana's login page
+curl -I https://mail.lab      # expect MailPit's web UI
+```
+
+Open `https://grafana.lab`, log in with the credentials from 7.1, and confirm **Prometheus**, **Loki**, and **Tempo** all show up under Connections → Data sources with no error — this is the concrete precondition `agentops-engine`'s OTel instrumentation (M4 sub-project 2) and its dashboards (sub-project 4) are built against.
+
+### 7.3 OTLP endpoint for `agentops-engine`
+
+`agentops-engine`'s worker/agent-runner OTel instrumentation exports to:
+
+```
+alloy.platform.svc.cluster.local:4317   # OTLP/gRPC, in-cluster only
+```
+
+No further platform-side change is needed for that sub-project to start emitting traces — Alloy already routes anything arriving there to Tempo, and tails every pod's container logs to Loki regardless of what emits them.
+
+---
+
 ## Rebuild from scratch
 
 Disaster recovery = new host + same three assets:
@@ -603,7 +664,7 @@ Reproduce locally:
 kustomize build --enable-helm clusters/ops/platform/<component>
 ```
 
-(Postgres requires the encrypted secret file and KSOPS plugin locally.)
+(Postgres and Grafana require the encrypted secret file and KSOPS plugin locally.)
 
 ### step-ca ACME / cert-manager issues
 
@@ -622,7 +683,8 @@ k3s default CNI (flannel) does **not** enforce `NetworkPolicy`. The `dev-agents`
 ## What comes next (out of scope for this doc)
 
 - Model tokens and forge secrets under `secrets/` beyond what Phase 6 needs
-- LGTM, LiteLLM, MailPit, GlitchTip (M4+)
+- LiteLLM, GlitchTip — the Alloy/LGTM stack and MailPit ship as of Phase 7 (M4 sub-project 1); these two remain M5/M6+
+- Grafana dashboards, `agent_run_stats` Postgres projection, Mission Control — M4 sub-projects 3–5, not this doc
 - GitHub Actions self-hosted runner on the host (operator-managed)
 - `pi`/`cursor`/`codex` agent-runner images — M2 ships `claude` only
 

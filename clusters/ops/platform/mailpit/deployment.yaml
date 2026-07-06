@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailpit
+  namespace: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mailpit
+  template:
+    metadata:
+      labels:
+        app: mailpit
+    spec:
+      containers:
+        - name: mailpit
+          image: axllent/mailpit:v1.30.3
+          ports:
+            - name: smtp
+              containerPort: 1025
+              protocol: TCP
+            - name: web
+              containerPort: 8025
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: 8025
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8025
+            initialDelaySeconds: 15
+            periodSeconds: 15

@@ -9,5 +9,11 @@ resources:
   - platform/postgres/application.yaml
   - platform/temporal/application.yaml
   - platform/namespaces/application.yaml
+  - platform/prometheus/application.yaml
+  - platform/loki/application.yaml
+  - platform/tempo/application.yaml
+  - platform/alloy/application.yaml
+  - platform/grafana/application.yaml
+  - platform/mailpit/application.yaml
   - engine-secrets/application.yaml
   - engine/application.yaml

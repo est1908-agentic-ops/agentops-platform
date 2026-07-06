@@ -1,0 +1,72 @@
+# SingleBinary + filesystem storage: this cluster's log volume doesn't need
+# object storage or the read/write-path split SimpleScalable/Distributed exist
+# for (chart default is SimpleScalable, which requires object storage).
+deploymentMode: SingleBinary
+
+loki:
+  auth_enabled: false
+  commonConfig:
+    replication_factor: 1
+  storage:
+    type: filesystem
+  # A real install needs a schemaConfig spelled out (the chart's own
+  # testSchemaConfig escape hatch is explicitly for "testing or playing
+  # around" per its comment) -- this mirrors that same shape with real values.
+  schemaConfig:
+    configs:
+      - from: "2026-07-07"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+
+singleBinary:
+  replicas: 1
+  persistence:
+    size: 20Gi
+
+# The chart defaults these SimpleScalable-mode targets to 3 replicas each
+# regardless of deploymentMode -- zeroed out, since SingleBinary mode doesn't
+# use them (the chart's own validation rejects non-zero replicas on both
+# target sets at once).
+write:
+  replicas: 0
+
+read:
+  replicas: 0
+
+backend:
+  replicas: 0
+
+# SingleBinary mode has one backend to talk to directly -- the nginx
+# read/write-split gateway, canary, and test pods are overhead with nothing
+# else to validate against on a single-tenant lab install.
+gateway:
+  enabled: false
+
+test:
+  enabled: false
+
+lokiCanary:
+  enabled: false
+
+monitoring:
+  selfMonitoring:
+    enabled: false
+  lokiCanary:
+    enabled: false
+
+# No object storage backend configured, so the bundled minio dev instance
+# has nothing to provide.
+minio:
+  enabled: false
+
+# Memcached-backed chunk/results caching -- extra footprint this cluster's
+# log volume doesn't warrant yet; revisit if query latency becomes a problem.
+chunksCache:
+  enabled: false
+
+resultsCache:
+  enabled: false

@@ -1,0 +1,43 @@
+admin:
+  existingSecret: grafana-credentials
+  userKey: admin-user
+  passwordKey: admin-password
+
+persistence:
+  enabled: true
+  size: 5Gi
+
+# Static datasources -- all three addresses are known at deploy time, no
+# sidecar-watch mechanism needed (same "simplicity over machinery" call the
+# Postgres component made over the Bitnami chart's extra moving parts).
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus-server.platform.svc.cluster.local
+        isDefault: true
+      - name: Loki
+        type: loki
+        access: proxy
+        url: http://loki.platform.svc.cluster.local:3100
+      - name: Tempo
+        type: tempo
+        access: proxy
+        url: http://tempo.platform.svc.cluster.local:3200
+
+# Enabled now (with nothing to watch yet) so sub-project 4 can drop
+# grafana_dashboard-labeled ConfigMaps later with no further Grafana redeploy.
+sidecar:
+  dashboards:
+    enabled: true
+
+# Same bare-Ingress pattern temporal.lab already uses (confirmed via
+# `kustomize build --enable-helm` against the live temporal/ component) --
+# no TLS/annotation block invented here.
+ingress:
+  enabled: true
+  hosts:
+    - grafana.lab

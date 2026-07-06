@@ -1,0 +1,15 @@
+# No alerting rules exist anywhere in this stack yet, and nothing pushes
+# metrics to a pushgateway -- both stay off rather than standing up unused
+# infra. kube-state-metrics + node-exporter stay on (chart defaults): they're
+# what answers ARCHITECTURE.md §5.6's "is the platform healthy" question, at
+# negligible extra footprint on top of the server itself.
+alertmanager:
+  enabled: false
+
+prometheus-pushgateway:
+  enabled: false
+
+server:
+  persistentVolume:
+    enabled: true
+    size: 8Gi
