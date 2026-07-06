@@ -34,10 +34,21 @@ sidecar:
   dashboards:
     enabled: true
 
-# Same bare-Ingress pattern temporal.lab already uses (confirmed via
-# `kustomize build --enable-helm` against the live temporal/ component) --
-# no TLS/annotation block invented here.
+# Internal grafana.lab host plus a public host. The public host gets a real
+# Let's Encrypt cert via the letsencrypt ClusterIssuer (HTTP-01 through Traefik),
+# same shape as temporal-web (clusters/ops/platform/temporal). Requires a public
+# DNS A record grafana.agentic-ops.est1908.top -> 185.250.36.166 (DNS-provider
+# side, not automated here). Grafana has its own admin login (grafana-credentials),
+# so unlike Temporal Web this UI is authenticated.
 ingress:
   enabled: true
+  ingressClassName: traefik
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
   hosts:
     - grafana.lab
+    - grafana.agentic-ops.est1908.top
+  tls:
+    - secretName: grafana-tls
+      hosts:
+        - grafana.agentic-ops.est1908.top
