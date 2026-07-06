@@ -62,7 +62,7 @@ brew install age sops git
 ### Optional but useful
 
 ```bash
-brew install gh kubectl kustomize helm
+brew install gh kubectl kustomize helm jq
 ```
 
 | Tool | Purpose |
@@ -70,6 +70,7 @@ brew install gh kubectl kustomize helm
 | `gh` | GitHub CLI — auth, PRs, checking repo access |
 | `kubectl` | Inspect the remote cluster after bootstrap (copy kubeconfig from the host) |
 | `kustomize` / `helm` | Local render checks (`kustomize build --enable-helm clusters/ops/platform/...`) |
+| `jq` | Required by `scripts/configure-technitium-dns.sh` to parse API responses |
 
 ### Authenticate with GitHub
 
@@ -279,6 +280,44 @@ kubectl get jobs -n platform
 ```
 
 ### 3.2 Configure Technitium DNS
+
+Technitium needs a one-time zone (`lab`) plus an A record for `temporal.lab`. Use the script below (quick path) — it talks to Technitium's own [REST API](https://github.com/TechnitiumSoftware/DnsServer/blob/master/APIDOCS.md) and is safe to re-run. The manual web UI steps underneath remain as a fallback for when the API isn't reachable/authenticated yet (e.g. before Technitium's initial setup has run, or to troubleshoot).
+
+#### Quick path: `scripts/configure-technitium-dns.sh`
+
+1. Port-forward to Technitium's web UI/API (leave this running in a separate terminal):
+
+   ```bash
+   kubectl port-forward -n technitium svc/technitium 5380:5380
+   ```
+
+2. Find the target IP (Traefik's external/node IP):
+
+   ```bash
+   kubectl get svc -n kube-system traefik
+   ```
+
+3. Run the script. On first use, authenticate with the admin account (Technitium ships with `admin`/`admin` — change this password after first login) and pass `--print-token` to mint a reusable API token:
+
+   ```bash
+   TECHNITIUM_USER=admin TECHNITIUM_PASSWORD='<admin-password>' \
+     ./scripts/configure-technitium-dns.sh --target-ip <traefik-ip> --print-token
+   ```
+
+   Save the printed token (e.g. in your password manager) and use it for subsequent runs instead of the admin password:
+
+   ```bash
+   TECHNITIUM_TOKEN='<token-from-above>' \
+     ./scripts/configure-technitium-dns.sh --target-ip <traefik-ip>
+   ```
+
+   The script creates the `lab` zone only if it doesn't already exist, and creates/updates the `temporal.lab` A record only if it doesn't already point at `--target-ip` — re-running it is a no-op once DNS is already correct. Run `./scripts/configure-technitium-dns.sh --help` for all options (`--zone`, `--record`, `--ttl`, `--url`).
+
+4. Point your workstation or lab router DNS at Technitium for `*.lab` (or use Technitium as upstream forwarder).
+
+#### Manual fallback (web UI)
+
+Use this if the script can't reach Technitium's API, credentials/token aren't set up yet, or you want to inspect the zone visually:
 
 1. Port-forward or reach Technitium web UI (port 5380):
 
