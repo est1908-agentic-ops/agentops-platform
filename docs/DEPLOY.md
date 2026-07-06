@@ -3,7 +3,7 @@
 Copy-paste runbook for standing up the ops cluster on a **fresh Ubuntu/Debian LTS host** (VPS or bare metal). Assumes a single-node k3s cluster managed by ArgoCD watching this repo.
 
 **Repo:** [github.com/flair-hr/agentops-platform](https://github.com/flair-hr/agentops-platform)  
-**Git URL (ArgoCD):** `https://github.com/flair-hr/agentops-platform.git`  
+**Git URL (ArgoCD):** `git@github.com:flair-hr/agentops-platform.git` (SSH deploy key — see Phase 4)  
 **Branch:** `main`
 
 For design rationale and decisions, see [BOOTSTRAP.md](BOOTSTRAP.md). This doc is the operator checklist only.
@@ -172,7 +172,7 @@ Store the password somewhere safe if you need manual `psql` access later.
 All ArgoCD Applications and `bootstrap/root-app.yaml` should reference:
 
 ```yaml
-repoURL: https://github.com/flair-hr/agentops-platform.git
+repoURL: git@github.com:flair-hr/agentops-platform.git
 ```
 
 Push any local changes (age recipient, postgres secret, bootstrap manifests) to `main` before bootstrapping the host.
@@ -223,7 +223,7 @@ Re-running the same command is safe (idempotent).
 
 1. On your workstation, edit `bootstrap/cloud-init.yaml`:
    - Replace the `age.key` `content:` block with your real private key (lines starting with `AGE-SECRET-KEY-`).
-   - Confirm embedded `repoURL` is `https://github.com/flair-hr/agentops-platform.git`.
+   - Confirm embedded `repoURL` is `git@github.com:flair-hr/agentops-platform.git`.
 2. Paste the **entire file** into the provider's user-data / cloud-init field at VM creation.
 3. Wait for first boot (~5–15 min depending on network).
 
