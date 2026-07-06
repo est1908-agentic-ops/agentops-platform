@@ -6,8 +6,8 @@ namespace: dev-agents
 # unless overriding for a one-off deploy.
 image:
   repository: ghcr.io/flair-hr/agentops-engine
-  workerTag: CHANGEME
-  agentClaudeTag: CHANGEME
+  workerTag: "dcf3d060900c83a830c6bd5eff7f760f902d7b5a"
+  agentClaudeTag: "dcf3d060900c83a830c6bd5eff7f760f902d7b5a"
   pullPolicy: IfNotPresent
 
 temporalAddress: "temporal-frontend.platform.svc.cluster.local:7233"
