@@ -439,15 +439,16 @@ Expect `root` to flip to `Synced` and the six child Applications (`cert-manager`
 
 ## Phase 6 — Deploy the engine
 
-The `engine` Application (`clusters/ops/engine/`) deploys the Temporal worker + wires `runAgent` to launch `agent-claude` as a K8s Job in `dev-agents`. Its Helm chart is pulled as an **OCI artifact** from `oci://gitactions.est1908.top/agentic-ops/engine` (`chart: engine`) — not from `agentops-engine`'s git repo — so ArgoCD needs no git credential for `agentops-engine` at all, only the registry credential in 6.2.6.
+The `engine` Application (`clusters/ops/engine/`) deploys the Temporal worker + wires `runAgent` to launch `agent-runner` as a K8s Job in `dev-agents` (as of 2026-07-06, `agent-claude`/`agent-pi` were consolidated into this one image — see the `agentRunnerTag` comment in `values.yaml`). Its Helm chart is pulled as an **OCI artifact** from `oci://gitactions.est1908.top/agentic-ops/engine` (`chart: engine`) — not from `agentops-engine`'s git repo — so ArgoCD needs no git credential for `agentops-engine` at all, only the registry credential in 6.2.6.
 
 **Do not sync this yet if the blocker below is unresolved** — the worker will come up but every real task will fail.
 
 ### 6.0 Status (as of 2026-07-06)
 
 - ~~No auth secret wired for `agent-claude` Jobs~~ — **fixed**: `claudeAuthSecretName` chart value (default `claude-credentials`) + `CLAUDE_AUTH_SECRET_NAME` env var wire `authSecretName` into every `claude` `K8sJobRunner`/Job pod (`agentops-engine#4`).
-- Images and the **Helm chart itself** now come from a self-hosted registry (`gitactions.est1908.top/agentic-ops`), not GHCR and not git. `agentops-engine` CI packages `charts/engine` as an OCI artifact (version `0.0.0-<git-sha>`) alongside the `worker`/`agent-claude` images on every merge to `main`. Since it's basic-auth-gated: images need a K8s `imagePullSecrets` entry (6.2.5), and ArgoCD's own chart pull needs a separate Helm-type repository credential (6.2.6) — same underlying username/password, two different consumers.
-- ~~`bump-platform` CI job fails~~ — **fixed**: swapped `PLATFORM_REPO_TOKEN` (a PAT that never had real access) for a write-enabled deploy key scoped to `agentops-platform` (`agentops-engine#6`), and fixed a Python regex crash the auth failure had been masking (`agentops-engine#7`). Confirmed working end-to-end: `workerTag`/`agentClaudeTag`/chart `targetRevision` now auto-bump on every merge to `agentops-engine` main. 6.3 below is now just a sanity check, not a required manual step.
+- Images and the **Helm chart itself** now come from a self-hosted registry (`gitactions.est1908.top/agentic-ops`), not GHCR and not git. `agentops-engine` CI packages `charts/engine` as an OCI artifact (version `0.0.0-<git-sha>`) alongside the `worker`/`agent-runner`/`gateway` images on every merge to `main`. Since it's basic-auth-gated: images need a K8s `imagePullSecrets` entry (6.2.5), and ArgoCD's own chart pull needs a separate Helm-type repository credential (6.2.6) — same underlying username/password, two different consumers.
+- ~~`bump-platform` CI job fails~~ — **fixed**: swapped `PLATFORM_REPO_TOKEN` (a PAT that never had real access) for a write-enabled deploy key scoped to `agentops-platform` (`agentops-engine#6`), and fixed a Python regex crash the auth failure had been masking (`agentops-engine#7`). Confirmed working end-to-end: `workerTag`/`agentRunnerTag`/chart `targetRevision` now auto-bump on every merge to `agentops-engine` main. 6.3 below is now just a sanity check, not a required manual step.
+- `agentClaudeTag` was renamed to `agentRunnerTag` (2026-07-06): `claude` and `pi` now share one image (`images/agent-claude/` no longer exists in `agentops-engine`). A `gatewayTag` field was also added — it has no historical bump yet, so it stays `CHANGEME` in `values.yaml` until the next `agentops-engine` CI run sets a real value.
 
 Also confirm before starting: you (or whoever ran the earlier `.sops.yaml`/postgres-secret setup) still has the **age private key** file backed up and accessible — it's required for Phase 1 and isn't recoverable from either repo.
 
@@ -485,7 +486,7 @@ kubectl -n dev-agents create secret generic claude-credentials \
 
 ### 6.2.5 Create the registry pull Secret
 
-Images are pulled from `gitactions.est1908.top` (basic auth). Secret name matches the chart's `imagePullSecretName` value (default `registry-credentials`) — needed by both the worker Deployment and every `agent-claude` Job pod:
+Images are pulled from `gitactions.est1908.top` (basic auth). Secret name matches the chart's `imagePullSecretName` value (default `registry-credentials`) — needed by both the worker Deployment and every `agent-runner` Job pod:
 
 ```bash
 kubectl -n dev-agents create secret docker-registry registry-credentials \
@@ -525,7 +526,7 @@ Without this, the `engine` Application's chart source (`oci://gitactions.est1908
 grep -n "CHANGEME" clusters/ops/engine/values.yaml clusters/ops/engine/application.yaml
 ```
 
-If anything prints, manually set `workerTag`/`agentClaudeTag` in `values.yaml` to a real git SHA from `agentops-engine`'s `main` (confirm the matching images exist: `gitactions.est1908.top/agentic-ops/{worker,agent-claude}:<sha>`), and `application.yaml`'s chart `targetRevision` to `"0.0.0-<same sha>"` (confirm that chart version was actually pushed — `agentops-engine`'s `build-images` job pushes it on every merge to `main`), commit, push.
+If anything prints, manually set `workerTag`/`agentRunnerTag`/`gatewayTag` in `values.yaml` to a real git SHA from `agentops-engine`'s `main` (confirm the matching images exist: `gitactions.est1908.top/agentic-ops/{worker,agent-runner,gateway}:<sha>`), and `application.yaml`'s chart `targetRevision` to `"0.0.0-<same sha>"` (confirm that chart version was actually pushed — `agentops-engine`'s `build-images` job pushes it on every merge to `main`), commit, push. `gatewayTag` is expected to print `CHANGEME` until the next CI bump lands (see 6.0) — everything else should not.
 
 ### 6.4 Watch it sync
 

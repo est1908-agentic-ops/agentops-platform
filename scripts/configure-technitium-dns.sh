@@ -30,6 +30,8 @@ readonly DEFAULT_ZONE="lab"
 readonly DEFAULT_RECORD="temporal.lab"
 readonly DEFAULT_TTL="3600"
 readonly DEFAULT_TOKEN_NAME="agentops-platform-dns-script"
+readonly CURL_CONNECT_TIMEOUT="10"
+readonly CURL_MAX_TIME="30"
 
 TECHNITIUM_URL="${TECHNITIUM_URL:-${DEFAULT_URL}}"
 ZONE="${ZONE:-${DEFAULT_ZONE}}"
@@ -154,13 +156,27 @@ validate_inputs() {
   esac
 }
 
+# URL-encodes the value of the named environment variable for use in an
+# application/x-www-form-urlencoded request body. Takes the variable's NAME
+# (e.g. "TECHNITIUM_PASSWORD"), not its value, and has jq read the actual
+# value out of its own inherited environment (`env[$name]`) — so the secret
+# itself never appears as a jq/curl process argument, where it would be
+# visible to other users on the box via `ps`/`/proc/<pid>/cmdline`.
+url_encode_env() {
+  jq -rn --arg name "$1" '(env[$name] // "") | @uri'
+}
+
 # Performs a GET request against the Technitium API. Query params are passed
 # as additional "key=value" arguments and URL-encoded by curl. Adds the
 # Authorization header once AUTH_TOKEN has been set by authenticate().
+#
+# Not used for the login call: login credentials must never be passed as
+# curl arguments (visible via `ps`) or as a GET query string (may be
+# logged/cached by intermediaries) — see authenticate().
 td_request() {
   local path="$1"
   shift
-  local curl_args=(-sS -G "${TECHNITIUM_URL}${path}")
+  local curl_args=(-sS -G --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" "${TECHNITIUM_URL}${path}")
   local kv
   for kv in "$@"; do
     curl_args+=(--data-urlencode "${kv}")
@@ -171,17 +187,13 @@ td_request() {
   curl "${curl_args[@]}"
 }
 
-# Wraps td_request with transport- and API-level error handling (Technitium
-# reports API errors as HTTP 200 with a JSON "status" field, not HTTP error
-# codes). On success, prints the raw JSON response on stdout.
-td_call() {
-  local path="$1" context="$2"
-  shift 2
-  local response
-  if ! response="$(td_request "${path}" "$@")"; then
-    log "ERROR: request for ${context} failed (could not reach ${TECHNITIUM_URL}${path})"
-    exit 1
-  fi
+# Checks a Technitium JSON response for status=="ok" (Technitium reports API
+# errors as HTTP 200 with a JSON "status" field, not HTTP error codes) and
+# exits with a clear error otherwise. On success, prints the raw response on
+# stdout. Split out from td_call so authenticate() can reuse the same
+# error-handling for its POST-based login request.
+td_check_response() {
+  local context="$1" response="$2"
   local status
   status="$(jq -r '.status // "unknown"' <<<"${response}" 2>/dev/null || echo "unknown")"
   if [[ "${status}" != "ok" ]]; then
@@ -196,6 +208,19 @@ td_call() {
   printf '%s' "${response}"
 }
 
+# Wraps td_request with td_check_response's transport- and API-level error
+# handling.
+td_call() {
+  local path="$1" context="$2"
+  shift 2
+  local response
+  if ! response="$(td_request "${path}" "$@")"; then
+    log "ERROR: request for ${context} failed (could not reach ${TECHNITIUM_URL}${path})"
+    exit 1
+  fi
+  td_check_response "${context}" "${response}"
+}
+
 authenticate() {
   if [[ -n "${TECHNITIUM_TOKEN:-}" ]]; then
     log "Using TECHNITIUM_TOKEN for authentication"
@@ -204,11 +229,21 @@ authenticate() {
   fi
 
   log "Logging in to Technitium as '${TECHNITIUM_USER}' at ${TECHNITIUM_URL}"
-  local login_args=("user=${TECHNITIUM_USER}" "pass=${TECHNITIUM_PASSWORD}")
-  [[ -n "${TECHNITIUM_TOTP:-}" ]] && login_args+=("totp=${TECHNITIUM_TOTP}")
+
+  # Built and sent as a POST body over stdin (--data-binary @-), never as
+  # curl arguments or a GET query string, so the password/TOTP never appear
+  # in this process's argv or in any URL an intermediary might log or cache.
+  local body
+  body="user=$(url_encode_env TECHNITIUM_USER)&pass=$(url_encode_env TECHNITIUM_PASSWORD)"
+  [[ -n "${TECHNITIUM_TOTP:-}" ]] && body+="&totp=$(url_encode_env TECHNITIUM_TOTP)"
 
   local response
-  response="$(td_call /api/user/login "login" "${login_args[@]}")"
+  if ! response="$(printf '%s' "${body}" | curl -sS -X POST --connect-timeout "${CURL_CONNECT_TIMEOUT}" --max-time "${CURL_MAX_TIME}" --data-binary @- "${TECHNITIUM_URL}/api/user/login")"; then
+    log "ERROR: request for login failed (could not reach ${TECHNITIUM_URL}/api/user/login)"
+    exit 1
+  fi
+  response="$(td_check_response "login" "${response}")"
+
   AUTH_TOKEN="$(jq -r '.token // empty' <<<"${response}")"
   if [[ -z "${AUTH_TOKEN}" ]]; then
     log "ERROR: login succeeded but response contained no token"
