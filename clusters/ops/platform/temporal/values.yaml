@@ -48,5 +48,23 @@ grafana:
 web:
   ingress:
     enabled: true
+    className: traefik
+    # Public host gets a real Let's Encrypt cert via the letsencrypt ClusterIssuer
+    # (HTTP-01 through Traefik). Requires a public DNS A record for
+    # temporal.agentic-ops.est1908.top -> the cluster's ingress IP
+    # (185.250.36.166), created on the DNS provider side (not automated here —
+    # same as agentic-ops.est1908.top).
+    #
+    # NOTE: the Temporal Web UI has NO authentication. This host is intentionally
+    # exposed to the public internet with no auth (per ops decision 2026-07-06):
+    # anyone reachable can view workflow inputs/outputs and terminate workflows.
+    # Put a Traefik auth middleware in front of it if that ever needs locking down.
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt
     hosts:
       - "temporal.lab"
+      - "temporal.agentic-ops.est1908.top"
+    tls:
+      - secretName: temporal-web-tls
+        hosts:
+          - "temporal.agentic-ops.est1908.top"
