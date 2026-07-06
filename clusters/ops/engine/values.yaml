@@ -24,3 +24,16 @@ githubTokenSecretName: github-token
 imagePullSecretName: registry-credentials
 claudeAuthSecretName: claude-credentials
 piAuthSecretName: pi-credentials
+
+gateway:
+  # Real public hostname for GitHub's webhook delivery — the letsencrypt
+  # ClusterIssuer (clusters/ops/platform/letsencrypt) issues a real,
+  # publicly-trusted cert for it via HTTP-01 through Traefik. Requires port 80
+  # reachable from the internet on this host and a public DNS A/AAAA record
+  # for agentic-ops.est1908.top pointed at it (not automated here — that's a
+  # DNS-provider-side change outside this repo's scope, same as Technitium's
+  # *.lab zone is separate from public DNS).
+  ingress:
+    enabled: true
+    host: agentic-ops.est1908.top
+    clusterIssuer: letsencrypt

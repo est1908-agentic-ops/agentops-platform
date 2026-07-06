@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   - platform/cert-manager/application.yaml
   - platform/step-ca/application.yaml
+  - platform/letsencrypt/application.yaml
   - platform/technitium/application.yaml
   - platform/postgres/application.yaml
   - platform/temporal/application.yaml
