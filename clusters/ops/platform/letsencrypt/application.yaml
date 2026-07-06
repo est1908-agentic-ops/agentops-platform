@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: letsencrypt
+  namespace: argocd
+  annotations:
+    # Needs cert-manager's CRDs to exist first, same dependency step-ca has.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/flair-hr/agentops-platform.git
+    targetRevision: main
+    path: clusters/ops/platform/letsencrypt
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
