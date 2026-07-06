@@ -3,7 +3,7 @@
 Copy-paste runbook for standing up the ops cluster on a **fresh Ubuntu/Debian LTS host** (VPS or bare metal). Assumes a single-node k3s cluster managed by ArgoCD watching this repo.
 
 **Repo:** [github.com/flair-hr/agentops-platform](https://github.com/flair-hr/agentops-platform)  
-**Git URL (ArgoCD):** `https://github.com/flair-hr/agentops-platform.git`  
+**Git URL (ArgoCD):** `git@github.com:flair-hr/agentops-platform.git` (SSH deploy key — see Phase 4)  
 **Branch:** `main`
 
 For design rationale and decisions, see [BOOTSTRAP.md](BOOTSTRAP.md). This doc is the operator checklist only.
@@ -172,7 +172,7 @@ Store the password somewhere safe if you need manual `psql` access later.
 All ArgoCD Applications and `bootstrap/root-app.yaml` should reference:
 
 ```yaml
-repoURL: https://github.com/flair-hr/agentops-platform.git
+repoURL: git@github.com:flair-hr/agentops-platform.git
 ```
 
 Push any local changes (age recipient, postgres secret, bootstrap manifests) to `main` before bootstrapping the host.
@@ -223,7 +223,7 @@ Re-running the same command is safe (idempotent).
 
 1. On your workstation, edit `bootstrap/cloud-init.yaml`:
    - Replace the `age.key` `content:` block with your real private key (lines starting with `AGE-SECRET-KEY-`).
-   - Confirm embedded `repoURL` is `https://github.com/flair-hr/agentops-platform.git`.
+   - Confirm embedded `repoURL` is `git@github.com:flair-hr/agentops-platform.git`.
 2. Paste the **entire file** into the provider's user-data / cloud-init field at VM creation.
 3. Wait for first boot (~5–15 min depending on network).
 
@@ -341,45 +341,35 @@ Or open `https://temporal.lab` in a browser — expect a valid cert from step-ca
 
 ## Phase 4 — Private repo access
 
-If `flair-hr/agentops-platform` is **private**, ArgoCD needs credentials before it can clone.
+`flair-hr/agentops-platform` is **private**, so ArgoCD needs credentials before it can clone it — required before Phase 2's `root` Application can ever reach `Synced` (every `repoURL` in this repo, including `bootstrap/root-app.yaml`, is now the SSH form `git@github.com:flair-hr/agentops-platform.git`, matching the deploy key generated in Phase 1A).
+
+**Do this before or immediately after Phase 1** — if `root`'s sync status is stuck on `Unknown` with no child Applications appearing in Phase 2, this is almost always why.
+
+Reuse the same deploy key from Phase 1A if you still have its private half, or generate a fresh one (Settings → Deploy keys, read access is enough — ArgoCD only needs to read):
 
 ```bash
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
-# GitHub PAT with repo read scope
 kubectl -n argocd create secret generic repo-flair-hr-agentops \
-  --from-literal=username=git \
-  --from-literal=password="ghp_YOUR_TOKEN"
+  --from-literal=type=git \
+  --from-literal=url=git@github.com:flair-hr/agentops-platform.git \
+  --from-file=sshPrivateKey=/path/to/agentops-platform-deploy-key
 
-# Label so ArgoCD picks it up
 kubectl -n argocd label secret repo-flair-hr-agentops \
   argocd.argoproj.io/secret-type=repository
-
-# Register the repo (or use argocd CLI / UI)
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Secret
-metadata:
-  name: repo-flair-hr-agentops
-  namespace: argocd
-  labels:
-    argocd.argoproj.io/secret-type: repository
-stringData:
-  type: git
-  url: https://github.com/flair-hr/agentops-platform.git
-  username: git
-  password: ghp_YOUR_TOKEN
-EOF
 ```
 
-Refresh the root app in the ArgoCD UI or:
+Refresh the root app:
 
 ```bash
 kubectl -n argocd patch application root --type merge -p \
   '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
+kubectl get applications -n argocd -w
 ```
 
-For SSH deploy keys, use ArgoCD's SSH repo secret format instead.
+Expect `root` to flip to `Synced` and the six child Applications (`cert-manager`, `step-ca`, `technitium`, `postgres`, `temporal`, `namespaces`) to appear.
+
+**Cloud-init path:** this secret still has to be created manually after first boot — `cloud-init.yaml` provisions the age key but not an ArgoCD repo credential, so `root` will sit on `Unknown` until you run the two commands above once, post-boot.
 
 ---
 

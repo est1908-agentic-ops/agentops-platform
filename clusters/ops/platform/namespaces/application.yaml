@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/flair-hr/agentops-platform.git
+    repoURL: git@github.com:flair-hr/agentops-platform.git
     targetRevision: main
     path: clusters/ops/platform/namespaces
     directory:
