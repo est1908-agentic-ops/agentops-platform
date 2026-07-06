@@ -260,12 +260,14 @@ kubectl get applications -n argocd -w
 2. `step-ca` — needs cert-manager CRDs for `ClusterIssuer`
 3. `technitium`, `postgres`, `temporal`, `namespaces` — can proceed in parallel once deps are met
 
-If `postgres` stays `Degraded`, check that `secrets/postgres/postgres-credentials.enc.yaml` is on `main` and the age key in the `sops-age` secret matches the key that encrypted it:
+If `postgres` stays `Degraded` or `Unknown`, check that `secrets/postgres/postgres-credentials.enc.yaml` is on `main` and the age key in the `sops-age` secret matches the key that encrypted it:
 
 ```bash
 kubectl -n argocd get secret sops-age -o yaml
 kubectl -n argocd logs deploy/argocd-repo-server --tail=50
 ```
+
+If the error instead says `unable to find plugin root` — see [Troubleshooting → postgres stuck on Unknown](#postgres-stuck-on-unknown--ksops-plugin-not-found).
 
 ---
 
@@ -517,6 +519,10 @@ KSOPS init-container failed or age secret missing:
 kubectl -n argocd logs deploy/argocd-repo-server -c install-ksops
 kubectl -n argocd get secret sops-age
 ```
+
+### postgres stuck on Unknown — ksops plugin not found
+
+Error looks like `Failed to load target state: ... unable to find plugin root - tried: ...`. This means the `install-ksops` init container ran fine (binaries exist at `/usr/local/bin/kustomize`/`/usr/local/bin/ksops`), but that's a *different* lookup than the one kustomize's generator loader actually uses for `apiVersion: viaduct.ai/v1, kind: ksops` (`postgres/secret-generator.yaml`) — it searches `$XDG_CONFIG_HOME/kustomize/plugin/viaduct.ai/v1/ksops/ksops`, unrelated to `$PATH`. `argocd-values.yaml` mounts the `ksops` binary there too (in addition to `/usr/local/bin`) — if you still hit this on a from-scratch bootstrap, confirm that third `volumeMounts` entry is present on the live `argocd-repo-server` Deployment (`kubectl -n argocd get deploy argocd-repo-server -o yaml`); if it's missing, the ArgoCD Helm release predates this fix and needs `helm upgrade` to pick it up (a plain `bootstrap.sh` re-run doesn't touch it, since ArgoCD install is idempotent-skip once already installed).
 
 ### Application `Unknown` / `ComparisonError`
 
