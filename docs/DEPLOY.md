@@ -381,6 +381,93 @@ For SSH deploy keys, use ArgoCD's SSH repo secret format instead.
 
 ---
 
+## Phase 6 — Deploy the engine
+
+The `engine` Application (`clusters/ops/engine/`) points at `agentops-engine`'s `charts/engine` and deploys the Temporal worker + wires `runAgent` to launch `agent-claude` as a K8s Job in `dev-agents`.
+
+**Do not sync this yet if the blocker below is unresolved** — the worker will come up but every real task will fail.
+
+### 6.0 Status (as of 2026-07-06)
+
+- ~~No auth secret wired for `agent-claude` Jobs~~ — **fixed**: `claudeAuthSecretName` chart value (default `claude-credentials`) + `CLAUDE_AUTH_SECRET_NAME` env var wire `authSecretName` into every `claude` `K8sJobRunner`/Job pod (`agentops-engine#4`).
+- Images now come from a **self-hosted registry** (`gitactions.est1908.top/agentic-ops`), not GHCR. Since it's basic-auth-gated, both the worker Deployment and every `agent-claude` Job pod need an `imagePullSecrets` entry (`imagePullSecretName` chart value, default `registry-credentials`) — see 6.2.5.
+- ~~`bump-platform` CI job fails~~ — **fixed**: swapped `PLATFORM_REPO_TOKEN` (a PAT that never had real access) for a write-enabled deploy key scoped to this repo (`agentops-engine#6`), and fixed a Python regex crash the auth failure had been masking (`agentops-engine#7`). Confirmed working end-to-end: `workerTag`/`agentClaudeTag`/`targetRevision` now auto-bump on every merge to `agentops-engine` main. 6.3 below is now just a sanity check, not a required manual step.
+
+Also confirm before starting: you (or whoever ran the earlier `.sops.yaml`/postgres-secret setup) still has the **age private key** file backed up and accessible — it's required for Phase 1 and isn't recoverable from either repo.
+
+### 6.1 Create the `github-token` Secret in `dev-agents`
+
+The worker needs this to open PRs (`githubTokenSecretName` chart value, default `github-token`):
+
+```bash
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+
+kubectl create namespace dev-agents --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n dev-agents create secret generic github-token \
+  --from-literal=GITHUB_TOKEN=ghp_YOUR_TOKEN
+```
+
+(A PAT or GitHub App token with repo write access to whichever test repo you point the engine at — same one M1 used.)
+
+### 6.2 Create the Claude auth Secret
+
+Key name is `CLAUDE_CODE_OAUTH_TOKEN`, Secret name matches the chart's `claudeAuthSecretName` value (default `claude-credentials`):
+
+```bash
+kubectl -n dev-agents create secret generic claude-credentials \
+  --from-literal=CLAUDE_CODE_OAUTH_TOKEN="$(claude setup-token)"
+```
+
+### 6.2.5 Create the registry pull Secret
+
+Images are pulled from `gitactions.est1908.top` (basic auth). Secret name matches the chart's `imagePullSecretName` value (default `registry-credentials`) — needed by both the worker Deployment and every `agent-claude` Job pod:
+
+```bash
+kubectl -n dev-agents create secret docker-registry registry-credentials \
+  --docker-server=gitactions.est1908.top \
+  --docker-username=YOUR_USERNAME \
+  --docker-password=YOUR_PASSWORD
+```
+
+### 6.3 Confirm real image tags (sanity check — auto-bump should already have set these)
+
+```bash
+grep -n "CHANGEME" clusters/ops/engine/values.yaml clusters/ops/engine/application.yaml
+```
+
+If anything prints, manually set `workerTag`/`agentClaudeTag` to a real git SHA from `agentops-engine`'s `main` (confirm the matching images exist: `gitactions.est1908.top/agentic-ops/{worker,agent-claude}:<sha>`) and `targetRevision` to that same SHA (or `main`), commit, push.
+
+### 6.4 Watch it sync
+
+```bash
+kubectl get applications -n argocd -w
+```
+
+Expect `engine` to reach `Synced`/`Healthy` after `cert-manager`/`step-ca`/`technitium`/`postgres`/`temporal`/`namespaces` are already up (it needs `temporal-frontend.platform.svc.cluster.local:7233` reachable).
+
+```bash
+kubectl get pods -n dev-agents
+kubectl logs -n dev-agents deploy/engine-worker -f
+```
+
+### 6.5 Smoke test — the actual M2 gate
+
+From your workstation, with `kubectl port-forward` to Temporal's frontend (M2 has no external gRPC exposure by design — see `agentops-engine`'s M2 wiring doc):
+
+```bash
+kubectl port-forward -n platform svc/temporal-frontend 7233:7233 &
+```
+
+Then run the engine CLI against the same test repo M1 used:
+
+```bash
+TEMPORAL_ADDRESS=localhost:7233 engine start --issue <N>
+```
+
+Expect: a real merge-ready PR, with the `claude` invocation for each stage showing up in `kubectl get pods -n dev-agents` as a Job pod (not a process on the worker itself). This — not just "Applications are Healthy" — is what actually proves the M2 gate (`ARCHITECTURE.md` §8.1: "M1's scenario runs entirely in-cluster").
+
+---
+
 ## Rebuild from scratch
 
 Disaster recovery = new host + same three assets:
@@ -439,9 +526,9 @@ k3s default CNI (flannel) does **not** enforce `NetworkPolicy`. The `dev-agents`
 
 ## What comes next (out of scope for this doc)
 
-- Engine chart under `clusters/ops/engine/` ([agentops-engine](https://github.com/flair-hr/agentops-engine))
-- Model tokens and forge secrets under `secrets/`
+- Model tokens and forge secrets under `secrets/` beyond what Phase 6 needs
 - LGTM, LiteLLM, MailPit, GlitchTip (M4+)
 - GitHub Actions self-hosted runner on the host (operator-managed)
+- `pi`/`cursor`/`codex` agent-runner images — M2 ships `claude` only
 
 See [BOOTSTRAP.md](BOOTSTRAP.md) steps 6–9 for the full M2 roadmap.
