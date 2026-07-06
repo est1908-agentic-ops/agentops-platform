@@ -8,7 +8,7 @@ spec:
   sources:
     - repoURL: oci://gitactions.est1908.top/agentic-ops
       chart: engine
-      targetRevision: "0.0.0-dcf3d060900c83a830c6bd5eff7f760f902d7b5a"
+      targetRevision: "0.0.0-73536085f8a6ff8b9e5af33bed5585edcd25d502"
       helm:
         releaseName: engine
         valueFiles:
