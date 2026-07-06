@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-initdb
+  namespace: platform
+  labels:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/instance: postgres
+data:
+  # Scripts in /docker-entrypoint-initdb.d are executed by the official postgres
+  # entrypoint on first initialisation only (empty data dir), as POSTGRES_USER
+  # against POSTGRES_DB. Temporal needs a second database besides the one the
+  # entrypoint creates from POSTGRES_DB (temporal); create it here so there is no
+  # manual post-bootstrap step.
+  10-temporal-visibility.sql: |
+    SELECT 'CREATE DATABASE temporal_visibility'
+    WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'temporal_visibility')\gexec

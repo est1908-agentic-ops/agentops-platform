@@ -275,25 +275,34 @@ If the error instead says `unable to find plugin root` — see [Troubleshooting 
 
 These are intentional one-time operator actions not automated in GitOps yet.
 
-### 3.1 Create the Temporal visibility database
+### 3.1 Temporal visibility database (now automatic)
 
-Bitnami Postgres only creates the `temporal` database from chart values. Temporal also needs `temporal_visibility`:
+Temporal needs two databases: `temporal` and `temporal_visibility`. Both are
+created automatically at first boot of the Postgres StatefulSet — `temporal`
+from `POSTGRES_DB`, and `temporal_visibility` from the initdb script in
+`clusters/ops/platform/postgres/initdb-configmap.yaml`. No manual step is
+required on a clean bootstrap.
 
-```bash
-kubectl exec -n platform -it postgres-postgresql-0 -- \
-  psql -U temporal -d temporal -c "CREATE DATABASE temporal_visibility;"
-```
+> Historical note: this used to be a manual `CREATE DATABASE temporal_visibility`
+> because the old Bitnami chart only created the one database. The Postgres
+> component is now a plain StatefulSet on the official image (see the
+> `kustomization.yaml` comment for why Bitnami was dropped), and its initdb
+> script handles the second database.
 
-If Temporal schema Jobs already failed, delete them after creating the DB and let ArgoCD re-sync:
+If Temporal schema Jobs failed *before* Postgres was healthy (e.g. the
+`postgres-credentials` secret didn't exist yet), delete them and let ArgoCD
+re-sync once Postgres is up:
 
 ```bash
 kubectl delete jobs -n platform -l app.kubernetes.io/instance=temporal
+kubectl get jobs -n platform   # confirm they re-run and complete
 ```
 
-Confirm Jobs complete:
+To verify both databases exist:
 
 ```bash
-kubectl get jobs -n platform
+kubectl exec -n platform postgres-postgresql-0 -- \
+  psql -U temporal -d temporal -c "\l" | grep temporal
 ```
 
 ### 3.2 Configure Technitium DNS
@@ -391,7 +400,7 @@ Expect `root` to flip to `Synced` and the six child Applications (`cert-manager`
 
 ## Phase 6 — Deploy the engine
 
-The `engine` Application (`clusters/ops/engine/`) deploys the Temporal worker + wires `runAgent` to launch `agent-claude` as a K8s Job in `dev-agents`. Its Helm chart is pulled as an **OCI artifact** from `oci://gitactions.est1908.top/agentic-ops` (`chart: engine`) — not from `agentops-engine`'s git repo — so ArgoCD needs no git credential for `agentops-engine` at all, only the registry credential in 6.2.6.
+The `engine` Application (`clusters/ops/engine/`) deploys the Temporal worker + wires `runAgent` to launch `agent-claude` as a K8s Job in `dev-agents`. Its Helm chart is pulled as an **OCI artifact** from `oci://gitactions.est1908.top/agentic-ops/engine` (`chart: engine`) — not from `agentops-engine`'s git repo — so ArgoCD needs no git credential for `agentops-engine` at all, only the registry credential in 6.2.6.
 
 **Do not sync this yet if the blocker below is unresolved** — the worker will come up but every real task will fail.
 
@@ -445,16 +454,22 @@ Different from 6.2.5 above — that Secret is for **kubelet** pulling container 
 kubectl -n argocd create secret generic repo-gitactions-registry \
   --from-literal=type=helm \
   --from-literal=name=gitactions-registry \
-  --from-literal=url=gitactions.est1908.top/agentic-ops \
+  --from-literal=url=oci://gitactions.est1908.top \
   --from-literal=enableOCI=true \
   --from-literal=username=YOUR_USERNAME \
   --from-literal=password=YOUR_PASSWORD
 
+# repo-creds (a credential *template*), NOT repository: it matches every repoURL
+# under the oci://gitactions.est1908.top prefix by prefix, so it keeps working when
+# CI bumps the chart tag/path. The url MUST carry the oci:// scheme — ArgoCD matches
+# repo credentials against the Application's repoURL by string, and the engine source
+# repoURL is oci://… ; a scheme-less url silently fails to match ("basic credential
+# not found" in the repo-server logs).
 kubectl -n argocd label secret repo-gitactions-registry \
-  argocd.argoproj.io/secret-type=repository
+  argocd.argoproj.io/secret-type=repo-creds
 ```
 
-Without this, the `engine` Application's chart source (`oci://gitactions.est1908.top/agentic-ops`, `chart: engine`) can't be pulled — same failure shape as Phase 4's missing git credential (stuck, no error obvious until you check `argocd-repo-server` logs).
+Without this, the `engine` Application's chart source (`oci://gitactions.est1908.top/agentic-ops/engine`, `chart: engine`) can't be pulled — same failure shape as Phase 4's missing git credential (stuck, no error obvious until you check `argocd-repo-server` logs).
 
 ### 6.3 Confirm real image tags and chart version (sanity check — auto-bump should already have set these)
 

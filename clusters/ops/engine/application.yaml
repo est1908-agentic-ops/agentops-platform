@@ -6,7 +6,10 @@ metadata:
 spec:
   project: default
   sources:
-    - repoURL: oci://gitactions.est1908.top/agentic-ops
+    # repoURL must be the full OCI path to the chart artifact (…/agentic-ops/engine).
+    # ArgoCD resolves the chart tag against repoURL directly and does NOT append the
+    # `chart` field to it, so a bare …/agentic-ops resolves the wrong artifact and 404s.
+    - repoURL: oci://gitactions.est1908.top/agentic-ops/engine
       chart: engine
       targetRevision: "0.0.0-73536085f8a6ff8b9e5af33bed5585edcd25d502"
       helm:
