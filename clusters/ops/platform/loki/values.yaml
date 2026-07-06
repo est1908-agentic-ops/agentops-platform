@@ -14,7 +14,7 @@ loki:
   # around" per its comment) -- this mirrors that same shape with real values.
   schemaConfig:
     configs:
-      - from: "2026-07-07"
+      - from: "2024-01-01"
         store: tsdb
         object_store: filesystem
         schema: v13
