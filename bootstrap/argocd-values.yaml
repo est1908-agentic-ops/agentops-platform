@@ -23,3 +23,12 @@ repoServer:
     - mountPath: /usr/local/bin/ksops
       name: custom-tools
       subPath: ksops
+    # kustomize's generator-plugin loader resolves `apiVersion: viaduct.ai/v1,
+    # kind: ksops` (see clusters/ops/platform/postgres/secret-generator.yaml)
+    # by searching $XDG_CONFIG_HOME/kustomize/plugin/<apiVersion>/<kind>/<Kind>
+    # — an entirely separate lookup from $PATH. The /usr/local/bin mount above
+    # does not satisfy it; verified locally that placing the binary here is
+    # what actually makes the generator resolve.
+    - mountPath: /home/argocd/.config/kustomize/plugin/viaduct.ai/v1/ksops/ksops
+      name: custom-tools
+      subPath: ksops
