@@ -54,13 +54,14 @@ ingress:
           pathType: ImplementationSpecific
   tls: []
 
-# litellm (proxy + prisma client) peaks around ~500Mi just during startup and gets
-# OOMKilled at the old 512Mi limit (confirmed via cgroup oom-kill: anon-rss ~505MB
-# before it even finished booting -> exit 137, no logs, port never opens). Give it
-# real headroom; the node has ~24Gi so 1Gi is comfortable.
+# litellm-database bundles the Python proxy AND a Prisma/Node query engine; its
+# real startup footprint is >1Gi. Confirmed via cgroup oom-kill twice: it climbed
+# to anon-rss ~1017MB and was still OOMKilled at a 1Gi limit (exit 137, no logs,
+# port never opens). 2Gi gives comfortable headroom over litellm's typical
+# ~1-1.5Gi; the node has ~24Gi allocatable.
 resources:
   requests:
     cpu: 100m
-    memory: 512Mi
-  limits:
     memory: 1Gi
+  limits:
+    memory: 2Gi
