@@ -37,22 +37,22 @@ spec:
             - -c
             - |
               set -eu
+              # ON_ERROR_STOP=1 is essential: without it psql exits 0 even when a
+              # statement errors, so this Job reported "Succeeded" while actually
+              # doing nothing (the role/db were never created).
               psql -h postgres-postgresql.platform.svc.cluster.local -U temporal -d temporal \
-                -v pw="$LITELLM_DB_PASSWORD" <<'SQL'
-              -- Create the role if missing, otherwise realign its password to the
-              -- secret. The ALTER matters: on any re-run (or after the password is
-              -- rotated in litellm-db-credentials) a bare CREATE ... IF NOT EXISTS
-              -- would leave a stale password on the existing role, and the chart's
-              -- Prisma migration would then fail P1000 auth against it.
-              DO $do$
-              BEGIN
-                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'litellm') THEN
-                  EXECUTE format('CREATE ROLE litellm WITH LOGIN PASSWORD %L', :'pw');
-                ELSE
-                  EXECUTE format('ALTER ROLE litellm WITH LOGIN PASSWORD %L', :'pw');
-                END IF;
-              END
-              $do$;
+                -v ON_ERROR_STOP=1 -v pw="$LITELLM_DB_PASSWORD" <<'SQL'
+              -- Create the role if missing, then always realign its password to the
+              -- secret (idempotent; also picks up a rotated password).
+              --
+              -- IMPORTANT: psql does NOT interpolate :'pw' inside a DO $$...$$
+              -- dollar-quoted block, so the earlier DO-block version sent a literal
+              -- ":'pw'" -> "syntax error at or near :" and never created the role.
+              -- Do the interpolation in plain SQL (where psql substitutes it) and run
+              -- the generated statement with \gexec instead.
+              SELECT format('CREATE ROLE litellm WITH LOGIN PASSWORD %L', :'pw')
+              WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'litellm')\gexec
+              ALTER ROLE litellm WITH LOGIN PASSWORD :'pw';
               SELECT 'CREATE DATABASE litellm OWNER litellm'
               WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'litellm')\gexec
               SQL
