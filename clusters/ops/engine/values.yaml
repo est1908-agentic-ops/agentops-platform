@@ -20,6 +20,27 @@ image:
 
 temporalAddress: "temporal-frontend.platform.svc.cluster.local:7233"
 
+# M4 sub-project 2 (agentops-engine): OTel spans export to Alloy's OTLP
+# endpoint, deployed in M4 sub-project 1. See that repo's
+# docs/superpowers/specs/2026-07-07-otel-instrumentation-design.md.
+otelExporterOtlpEndpoint: "http://alloy.platform.svc.cluster.local:4317"
+
+# M4 sub-project 3 (agentops-engine): agent_run_stats persists to its own
+# database on the shared Postgres instance (see
+# clusters/ops/platform/postgres/initdb-configmap.yaml for its creation).
+# port/name/user/passwordSecretName all already match the engine chart's
+# defaults -- only the host needs setting here.
+#
+# The agent_run_stats database itself MUST exist on the live cluster before
+# the next engine chart bump lands (auto-bumped by agentops-engine CI,
+# unattended) -- the worker calls ensureSchema() against this host at
+# startup and crash-loops if the database doesn't exist yet. initdb only
+# creates it on a fresh bootstrap, not on this already-running cluster; see
+# DEPLOY.md Phase 9 for the one-time manual `CREATE DATABASE` command. Same
+# hazard class as the github-token/projects warning below.
+agentStatsDb:
+  host: "postgres-postgresql.platform.svc.cluster.local"
+
 githubTokenSecretName: github-token
 imagePullSecretName: registry-credentials
 claudeAuthSecretName: claude-credentials
