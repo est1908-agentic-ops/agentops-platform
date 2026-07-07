@@ -39,10 +39,17 @@ spec:
               set -eu
               psql -h postgres-postgresql.platform.svc.cluster.local -U temporal -d temporal \
                 -v pw="$LITELLM_DB_PASSWORD" <<'SQL'
+              -- Create the role if missing, otherwise realign its password to the
+              -- secret. The ALTER matters: on any re-run (or after the password is
+              -- rotated in litellm-db-credentials) a bare CREATE ... IF NOT EXISTS
+              -- would leave a stale password on the existing role, and the chart's
+              -- Prisma migration would then fail P1000 auth against it.
               DO $do$
               BEGIN
                 IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'litellm') THEN
                   EXECUTE format('CREATE ROLE litellm WITH LOGIN PASSWORD %L', :'pw');
+                ELSE
+                  EXECUTE format('ALTER ROLE litellm WITH LOGIN PASSWORD %L', :'pw');
                 END IF;
               END
               $do$;
