@@ -21,3 +21,30 @@ resources:
 # consumed.
 generators:
   - secret-generator.yaml
+
+# Both the litellm-db-bootstrap Job (PreSync, wave -1) and the litellm-helm
+# chart's own DB migration Job (PreSync, wave 0) consume litellm-db-credentials.
+# KSOPS-generated Secrets are normal (Sync-phase) resources, which land AFTER
+# the PreSync phase -- so without this the bootstrap Job can never start
+# ("secret litellm-db-credentials not found" -> CreateContainerConfigError) and
+# the whole app deadlocks OutOfSync/Missing (the main sync, and thus every
+# litellm Secret, never applies).
+#
+# Promote just the DB secret to a PreSync hook one wave earlier (-2) than the
+# jobs that need it, so it exists before either runs. hook-delete-policy
+# BeforeHookCreation (the ArgoCD default) keeps it in place between syncs, so
+# the litellm Deployment can still mount it during the Sync phase. The other two
+# secrets are Deployment-only and correctly stay normal Sync-phase resources.
+patches:
+  - target:
+      kind: Secret
+      name: litellm-db-credentials
+    patch: |-
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: litellm-db-credentials
+        annotations:
+          argocd.argoproj.io/hook: PreSync
+          argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+          argocd.argoproj.io/sync-wave: "-2"
