@@ -1,9 +1,9 @@
 namespace: dev-agents
 
-# image.workerTag / image.agentRunnerTag / image.gatewayTag / chart targetRevision
-# are bumped automatically by agentops-engine CI on every merge to main (see that
-# repo's scripts/bump-platform-engine-tags.sh). Do not edit the tag fields by hand
-# unless overriding for a one-off deploy.
+# image.workerTag / image.agentRunnerTag / image.gatewayTag / image.controlTag /
+# chart targetRevision are bumped automatically by agentops-engine CI on every
+# merge to main (see that repo's scripts/bump-platform-engine-tags.sh). Do not
+# edit the tag fields by hand unless overriding for a one-off deploy.
 #
 # agentClaudeTag was renamed to agentRunnerTag (2026-07-06): claude and pi now
 # share one image (agentops-engine ARCHITECTURE.md §5.4) instead of one per
@@ -16,9 +16,15 @@ image:
   workerTag: "63e57c7160a407cf4819bd4f46f619a3aac1c69f"
   agentRunnerTag: "63e57c7160a407cf4819bd4f46f619a3aac1c69f"
   gatewayTag: "63e57c7160a407cf4819bd4f46f619a3aac1c69f"
+  # Platform console (agentops-engine PR #25). Pinned to the merge commit until
+  # the next engine CI bump lands; re-run engine main CI if the image is missing.
+  controlTag: "5f0b60ffddf37ab81e7d5c6e33068951d066c6e3"
   pullPolicy: IfNotPresent
 
 temporalAddress: "temporal-frontend.platform.svc.cluster.local:7233"
+
+# Temporal Web UI base URL for "Open in Temporal" links in the platform console.
+temporalUiBaseUrl: "https://temporal.agentic-ops.est1908.top"
 
 # M4 sub-project 2 (agentops-engine): OTel spans export to Alloy's OTLP
 # endpoint, deployed in M4 sub-project 1. See that repo's
@@ -70,4 +76,13 @@ gateway:
   ingress:
     enabled: true
     host: agentic-ops.est1908.top
+    clusterIssuer: letsencrypt
+
+control:
+  # Platform console — Vite SPA + control BFF served from one pod (port 3001).
+  # Public DNS A record console.agentic-ops.est1908.top -> 185.250.36.166
+  # (same ingress IP as agentic-ops.est1908.top / temporal.agentic-ops.est1908.top).
+  ingress:
+    enabled: true
+    host: console.agentic-ops.est1908.top
     clusterIssuer: letsencrypt
