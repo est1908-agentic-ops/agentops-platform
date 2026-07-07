@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# OCI-only chart -- no https:// repo alternative exists for litellm-helm.
+# Confirmed via `helm pull oci://ghcr.io/berriai/litellm-helm --version 1.91.0`
+# and `kustomize build --enable-helm` against this exact pin.
+helmCharts:
+  - name: litellm-helm
+    repo: oci://ghcr.io/berriai
+    version: 1.91.0
+    releaseName: litellm
+    namespace: platform
+    valuesFile: values.yaml
+
+resources:
+  - db-bootstrap-job.yaml
+
+# litellm-credentials (masterkey, LITELLM_SALT_KEY), litellm-db-credentials
+# (its own Postgres role), litellm-provider-keys (ZAI_API_KEY) -- all
+# KSOPS-decrypted, see values.yaml and db-bootstrap-job.yaml for how each is
+# consumed.
+generators:
+  - secret-generator.yaml

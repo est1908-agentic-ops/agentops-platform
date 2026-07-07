@@ -618,6 +618,59 @@ alloy.platform.svc.cluster.local:4317   # OTLP/gRPC, in-cluster only
 
 No further platform-side change is needed for that sub-project to start emitting traces — Alloy already routes anything arriving there to Tempo, and tails every pod's container logs to Loki regardless of what emits them.
 
+## Phase 8 — Deploy LiteLLM
+
+`litellm-credentials` and `litellm-db-credentials` are already real (generated and encrypted when this component was built) — no manual step needed for either. `litellm-provider-keys` ships with a deliberately-invalid `ZAI_API_KEY: CHANGEME` placeholder; the proxy comes up and syncs `Healthy` either way, but any call routed to the `zai-glm-4.6` model fails auth against z.ai until this is filled in.
+
+Design doc: [`docs/superpowers/specs/2026-07-07-litellm-deploy-design.md`](superpowers/specs/2026-07-07-litellm-deploy-design.md).
+
+### 8.1 Set the real z.ai API key
+
+```bash
+cd agentops-platform
+export SOPS_AGE_KEY_FILE=/path/to/age.key
+
+sops secrets/litellm/litellm-provider-keys.enc.yaml
+# replace CHANGEME with the real key, save and exit — sops re-encrypts in place
+
+git add secrets/litellm/litellm-provider-keys.enc.yaml
+git commit -m "chore: set the real z.ai API key for litellm"
+git push origin main
+```
+
+The proxy Deployment needs a restart to pick up the new secret value (`environmentSecrets` env vars aren't live-reloaded) — `kubectl rollout restart deployment/litellm -n platform`, or just wait for the next unrelated sync to touch the pod.
+
+### 8.2 Confirm the proxy is healthy
+
+```bash
+kubectl get applications -n argocd | grep litellm
+```
+
+Should reach `Synced`/`Healthy` (the `litellm-db-bootstrap` `PreSync` hook creates the `litellm` Postgres role/database before the chart's own migration Job runs — no manual DB step, same shape as Temporal's namespace bootstrap).
+
+```bash
+curl -s http://litellm.platform.svc.cluster.local:4000/health/readiness   # from in-cluster
+curl -I https://litellm.lab                                               # from an admin machine, after 3.2's DNS step
+```
+
+Mint a virtual key to confirm the admin API works (needs the real master key from `litellm-credentials`):
+
+```bash
+curl -s -X POST https://litellm.lab/key/generate \
+  -H "Authorization: Bearer $MASTER_KEY" -H "Content-Type: application/json" \
+  -d '{"models": ["zai-glm-4.6"], "max_budget": 1}'
+```
+
+### 8.3 Endpoint contract for `agentops-engine`
+
+`agentops-engine`'s new `litellm` backend (M5 sub-project 2) targets:
+
+```
+litellm.platform.svc.cluster.local:4000   # OpenAI-compatible, in-cluster only
+```
+
+Model routing entries for this backend use the LiteLLM-side alias, not a raw provider string — `zai-glm-4.6`, not `zai/glm-4.6`. Adding a second provider later (OpenRouter, direct Anthropic) is a `model_list` entry in this component's `values.yaml`, not an `agentops-engine` change.
+
 ---
 
 ## Rebuild from scratch

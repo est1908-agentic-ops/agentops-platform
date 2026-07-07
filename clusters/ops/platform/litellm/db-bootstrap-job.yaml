@@ -1,0 +1,51 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: litellm-db-bootstrap
+  namespace: platform
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    # One wave before the chart's own migration Job (also PreSync, default
+    # wave "0" -- confirmed via `kustomize build --enable-helm`), which needs
+    # the litellm role/database to exist before it can run Prisma migrations
+    # against them.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      name: litellm-db-bootstrap
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: create-role-and-database
+          image: postgres:16-alpine
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: password
+            - name: LITELLM_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-db-credentials
+                  key: password
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              psql -h postgres-postgresql.platform.svc.cluster.local -U temporal -d temporal \
+                -v pw="$LITELLM_DB_PASSWORD" <<'SQL'
+              DO $do$
+              BEGIN
+                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'litellm') THEN
+                  EXECUTE format('CREATE ROLE litellm WITH LOGIN PASSWORD %L', :'pw');
+                END IF;
+              END
+              $do$;
+              SELECT 'CREATE DATABASE litellm OWNER litellm'
+              WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'litellm')\gexec
+              SQL
