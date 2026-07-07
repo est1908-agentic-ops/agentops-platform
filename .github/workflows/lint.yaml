@@ -10,5 +10,72 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: shellcheck bootstrap.sh
-        run: shellcheck bootstrap/bootstrap.sh
+      - name: shellcheck
+        run: shellcheck bootstrap/bootstrap.sh scripts/validate-manifests.sh
+
+  manifests:
+    # Static manifest checks that need no secrets: SSH-only repoURLs and that every
+    # KSOPS-referenced encrypted secret file exists. Catches the mistakes that have
+    # broken the live cluster on merge (see scripts/validate-manifests.sh).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: validate manifests (static)
+        run: ./scripts/validate-manifests.sh
+
+  render:
+    # Full `kustomize build --enable-helm` render of every app -- the strongest check
+    # (catches bad Helm values, missing chart keys, template errors). It needs the SOPS
+    # age identity to decrypt KSOPS secrets, so it only runs when the SOPS_AGE_KEY repo
+    # secret is configured; otherwise it skips with a notice. To enable: add the age
+    # private key (the same one bootstrap wires into the ArgoCD repo-server) as the repo
+    # secret SOPS_AGE_KEY.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Detect age key
+        id: agekey
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+        run: |
+          if [ -n "${SOPS_AGE_KEY:-}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Full render skipped -- set the SOPS_AGE_KEY repo secret to enable kustomize build --enable-helm across all apps."
+          fi
+
+      - name: Install kustomize, helm, sops, ksops
+        if: steps.agekey.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          # helm
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          # kustomize
+          curl -fsSL "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+          # sops
+          SOPS_VER=v3.9.4
+          sudo curl -fsSL -o /usr/local/bin/sops \
+            "https://github.com/getsops/sops/releases/download/${SOPS_VER}/sops-${SOPS_VER}.linux.amd64"
+          sudo chmod +x /usr/local/bin/sops
+          # ksops kustomize exec plugin
+          curl -fsSL "https://raw.githubusercontent.com/viaduct-ai/kustomize-sops/master/scripts/install-ksops-archive.sh" | bash
+
+      - name: Render all apps
+        if: steps.agekey.outputs.present == 'true'
+        env:
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
+        run: |
+          set -euo pipefail
+          rc=0
+          while IFS= read -r kfile; do
+            dir=$(dirname "$kfile")
+            echo "== rendering $dir =="
+            if ! kustomize build --enable-helm "$dir" >/dev/null; then
+              echo "::error::kustomize build failed for $dir"
+              rc=1
+            fi
+          done < <(find clusters -name kustomization.yaml | sort)
+          exit "$rc"
