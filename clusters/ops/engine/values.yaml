@@ -77,6 +77,16 @@ gateway:
     enabled: true
     host: agentic-ops.est1908.top
     clusterIssuer: letsencrypt
+  # Same startup profile as control below (both are the console-era tsx build):
+  # the chart default (500m / 256Mi) crash-loops the new image. Kept in step
+  # with control.resources.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "2"
+      memory: 512Mi
 
 control:
   # Platform console — Vite SPA + control BFF served from one pod (port 3001).
@@ -86,3 +96,21 @@ control:
     enabled: true
     host: console.agentic-ops.est1908.top
     clusterIssuer: letsencrypt
+  # The console build (agentops-engine PR #25, image 5f0b60ff) bundles a Vite
+  # SPA into the control image, so tsx cold-start now needs ~350Mi+ and ~25s to
+  # bind /healthz. The chart's 256Mi limit OOMKills it on startup, and its
+  # hardcoded probes (no startupProbe / initialDelaySeconds — restart at ~30s)
+  # kill it before it can serve; both effects together crash-loop the pod and
+  # take Control fully down (Traefik 503). Raising memory stops the OOM and the
+  # extra CPU gets the cold start inside the liveness window. Verified
+  # end-to-end on-cluster: at 256Mi/500m the pod OOMKills; with the values below
+  # it reaches Ready with 0 restarts. Proper durable fix is a startupProbe in
+  # the engine chart (that repo isn't reachable from here); until then, do not
+  # lower these back to the chart defaults.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "2"
+      memory: 512Mi
