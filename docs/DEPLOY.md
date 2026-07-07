@@ -17,7 +17,9 @@ After this runbook:
 - k3s (Traefik bundled) + ArgoCD with KSOPS-decrypted SOPS secrets
 - Platform components: cert-manager, step-ca, Technitium DNS, Postgres, Temporal, `dev-agents` namespace
 - Observability: Prometheus, Loki, Tempo, Alloy, Grafana, MailPit (Phase 7)
-- Internal hostnames, e.g.: `temporal.lab`, `grafana.lab`, `mail.lab` (Ingress + step-ca certs)
+- LiteLLM gateway (Phase 8)
+- `agent_run_stats` database + postgres-exporter for size monitoring (Phase 9)
+- Internal hostnames, e.g.: `temporal.lab`, `grafana.lab`, `mail.lab`, `litellm.lab` (Ingress + step-ca certs)
 
 Everything after bootstrap is GitOps — no further `kubectl apply` for platform components.
 
@@ -248,7 +250,7 @@ Expect:
 
 - ArgoCD pods `Running`
 - Application `root` present and moving toward `Synced` / `Healthy`
-- Child Applications appearing: `cert-manager`, `step-ca`, `technitium`, `postgres`, `temporal`, `namespaces`, `prometheus`, `loki`, `tempo`, `alloy`, `grafana`, `mailpit`
+- Child Applications appearing: `cert-manager`, `step-ca`, `technitium`, `postgres`, `temporal`, `namespaces`, `prometheus`, `loki`, `tempo`, `alloy`, `grafana`, `mailpit`, `litellm`, `postgres-exporter`
 - `grafana` stays `Degraded`/`Unknown` until its encrypted credentials exist — see [Phase 7](#phase-7--deploy-the-observability-stack), same dependency shape as `postgres` above
 
 Watch until stable:
@@ -616,7 +618,9 @@ Open `https://grafana.lab`, log in with the credentials from 7.1, and confirm **
 alloy.platform.svc.cluster.local:4317   # OTLP/gRPC, in-cluster only
 ```
 
-No further platform-side change is needed for that sub-project to start emitting traces — Alloy already routes anything arriving there to Tempo, and tails every pod's container logs to Loki regardless of what emits them.
+No further platform-side change is needed for that sub-project to start emitting traces — Alloy already routes anything arriving there to Tempo, and tails every pod's container logs to Loki regardless of what emits them. `clusters/ops/engine/values.yaml`'s `otelExporterOtlpEndpoint` is already set to this value — inert until `agentops-engine`'s CI bump lands a chart version that recognizes the key, harmless either way.
+
+---
 
 ## Phase 8 — Deploy LiteLLM
 
@@ -670,6 +674,29 @@ litellm.platform.svc.cluster.local:4000   # OpenAI-compatible, in-cluster only
 ```
 
 Model routing entries for this backend use the LiteLLM-side alias, not a raw provider string — `zai-glm-4.6`, not `zai/glm-4.6`. Adding a second provider later (OpenRouter, direct Anthropic) is a `model_list` entry in this component's `values.yaml`, not an `agentops-engine` change.
+
+---
+
+## Phase 9 — `agent_run_stats` database and size monitoring
+
+`postgres` syncs the new `agent_run_stats` database automatically at Phase 2 (`postgres/initdb-configmap.yaml`) — no manual step, same mechanism as `temporal_visibility`. **Caveat, and on this repo's live cluster this is not just a monitoring-data gap — it can crash-loop the worker:** initdb scripts only run against an *empty* data directory, so on an already-bootstrapped cluster (existing PVC with data, which this repo's real cluster is per Phase 3's warnings elsewhere) the database will **not** appear on its own. `agentops-engine`'s worker calls `ensureSchema()` against `agent_run_stats` during startup whenever `AGENT_STATS_DB_HOST` is set (`clusters/ops/engine/values.yaml`'s `agentStatsDb.host`, already set by this repo) — if the database doesn't exist, that connection fails and the worker crash-loops, the same hazard class as the `github-token`/`projects` "DO NOT MERGE" warning in that same values file. **Run this now, before (or immediately after) merging this phase's changes — it's idempotent and safe to run early:**
+
+```bash
+kubectl exec -n platform postgres-postgresql-0 -- \
+  psql -U temporal -d temporal -c "CREATE DATABASE agent_run_stats;"
+```
+
+`postgres-exporter` also syncs automatically at Phase 2 with no manual step — it reuses the existing `postgres-credentials` secret, same as `postgres`/`temporal` themselves.
+
+`agentops-engine`'s worker creates its own `agent_run_stats` table inside that database at startup (idempotent `CREATE TABLE IF NOT EXISTS`) — nothing to do here once the database itself exists.
+
+### 9.1 Confirm size metrics are flowing
+
+```bash
+kubectl get applications -n argocd | grep postgres-exporter   # expect Synced/Healthy
+```
+
+Open `https://grafana.lab` → Explore → Prometheus datasource, query `pg_database_size_bytes` (every database on the shared instance) or `pg_stat_user_tables_n_live_tup{relname="agent_run_stats"}` (row count) to confirm the exporter is actually scraped. A dedicated dashboard panel for either is sub-project 4, not this phase — the metric being queryable here is what "monitor the data's size" means at this stage.
 
 ---
 
@@ -737,7 +764,7 @@ k3s default CNI (flannel) does **not** enforce `NetworkPolicy`. The `dev-agents`
 
 - Model tokens and forge secrets under `secrets/` beyond what Phase 6 needs
 - LiteLLM, GlitchTip — the Alloy/LGTM stack and MailPit ship as of Phase 7 (M4 sub-project 1); these two remain M5/M6+
-- Grafana dashboards, `agent_run_stats` Postgres projection, Mission Control — M4 sub-projects 3–5, not this doc
+- Grafana dashboards, Mission Control — M4 sub-projects 4–5, not this doc. `agent_run_stats` itself ships as of Phase 9 (M4 sub-project 3).
 - GitHub Actions self-hosted runner on the host (operator-managed)
 - `pi`/`cursor`/`codex` agent-runner images — M2 ships `claude` only
 
