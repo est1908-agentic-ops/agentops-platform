@@ -13,9 +13,9 @@ namespace: dev-agents
 # stays CHANGEME until the next agentops-engine CI run sets a real value.
 image:
   repository: gitactions.est1908.top/agentic-ops
-  workerTag: "d0f7b9d43c122aee410d380b12c409de88201f1b"
-  agentRunnerTag: "d0f7b9d43c122aee410d380b12c409de88201f1b"
-  gatewayTag: "d0f7b9d43c122aee410d380b12c409de88201f1b"
+  workerTag: "de8bd00d2069a857580391250c3490abde6a8e5f"
+  agentRunnerTag: "de8bd00d2069a857580391250c3490abde6a8e5f"
+  gatewayTag: "de8bd00d2069a857580391250c3490abde6a8e5f"
   pullPolicy: IfNotPresent
 
 temporalAddress: "temporal-frontend.platform.svc.cluster.local:7233"
