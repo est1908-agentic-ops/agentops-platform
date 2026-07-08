@@ -73,6 +73,28 @@ install_os_packages() {
   fi
 }
 
+tune_kernel_params() {
+  # Grafana Alloy (loki.source.kubernetes, clusters/ops/platform/alloy) opens
+  # one inotify instance per pod log tailer and has a known fd/instance leak
+  # under high pod churn (grafana/alloy#1217). dev-agents spawns one ephemeral
+  # Job pod per runAgent call, which exhausts the Ubuntu default of 128 user
+  # instances within minutes and silently drops all Loki log collection
+  # cluster-wide (every container logs "failed to create fsnotify watcher:
+  # too many open files" instead of its real output). max_user_watches is
+  # already well above default on this image, but bump it too for headroom.
+  local conf=/etc/sysctl.d/99-agentops-inotify.conf
+  if [[ -f "${conf}" ]]; then
+    log "inotify sysctls already configured at ${conf}"
+  else
+    log "Raising fs.inotify limits for Alloy's per-pod log tailers"
+    cat > "${conf}" <<'EOF'
+fs.inotify.max_user_instances = 1024
+fs.inotify.max_user_watches = 524288
+EOF
+    sysctl --system >/dev/null
+  fi
+}
+
 install_k3s() {
   if command -v k3s >/dev/null 2>&1; then
     log "k3s already installed ($(k3s -v | head -n1))"
@@ -147,6 +169,7 @@ apply_root_app() {
 
 main() {
   install_os_packages
+  tune_kernel_params
   install_k3s
   wait_for_k3s
   place_age_key
