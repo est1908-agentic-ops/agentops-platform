@@ -1,5 +1,11 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+# This app's destination is dev-agents. Pin every generated Secret to that
+# namespace so postgres-credentials (whose shared enc file is pinned to
+# `platform`) is retargeted here; the other engine secrets are already
+# dev-agents-pinned, so this is a no-op for them.
+namespace: dev-agents
+
 generators:
   - secret-generator.yaml
