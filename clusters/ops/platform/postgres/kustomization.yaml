@@ -12,8 +12,9 @@ resources:
   - service.yaml
   - statefulset.yaml
   - initdb-configmap.yaml
-  # PostSync hook that creates the agent_run_stats database on an
-  # already-bootstrapped cluster (initdb only covers fresh PGDATA).
+  # Sync-phase Job that ensures agentops_engine exists on an already-bootstrapped
+  # cluster (initdb only covers fresh PGDATA). Renames legacy agent_run_stats on
+  # existing clusters, then creates agentops_engine if still missing.
   - agent-stats-db-bootstrap-job.yaml
 
 # postgres-credentials Secret (KSOPS-decrypted). Consumed by both this

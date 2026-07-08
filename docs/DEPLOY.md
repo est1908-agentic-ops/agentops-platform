@@ -18,7 +18,7 @@ After this runbook:
 - Platform components: cert-manager, step-ca, Technitium DNS, Postgres, Temporal, `dev-agents` namespace
 - Observability: Prometheus, Loki, Tempo, Alloy, Grafana, MailPit (Phase 7)
 - LiteLLM gateway (Phase 8)
-- `agent_run_stats` database + postgres-exporter for size monitoring (Phase 9)
+- `agentops_engine` database + postgres-exporter for size monitoring (Phase 9)
 - Internal hostnames, e.g.: `temporal.lab`, `grafana.lab`, `mail.lab`, `litellm.lab` (Ingress + step-ca certs)
 
 Everything after bootstrap is GitOps — no further `kubectl apply` for platform components.
@@ -678,18 +678,20 @@ Model routing entries for this backend use the LiteLLM-side alias, not a raw pro
 
 ---
 
-## Phase 9 — `agent_run_stats` database and size monitoring
+## Phase 9 — `agentops_engine` database and size monitoring
 
-`postgres` syncs the new `agent_run_stats` database automatically at Phase 2 (`postgres/initdb-configmap.yaml`) — no manual step, same mechanism as `temporal_visibility`. **Caveat, and on this repo's live cluster this is not just a monitoring-data gap — it can crash-loop the worker:** initdb scripts only run against an *empty* data directory, so on an already-bootstrapped cluster (existing PVC with data, which this repo's real cluster is per Phase 3's warnings elsewhere) the database will **not** appear on its own. `agentops-engine`'s worker calls `ensureSchema()` against `agent_run_stats` during startup whenever `AGENT_STATS_DB_HOST` is set (`clusters/ops/engine/values.yaml`'s `agentStatsDb.host`, already set by this repo) — if the database doesn't exist, that connection fails and the worker crash-loops, the same hazard class as the `github-token`/`projects` "DO NOT MERGE" warning in that same values file. **Run this now, before (or immediately after) merging this phase's changes — it's idempotent and safe to run early:**
+`postgres` syncs the `agentops_engine` database automatically at Phase 2 (`postgres/initdb-configmap.yaml`) — no manual step on fresh installs, same mechanism as `temporal_visibility`. **Caveat on this repo's live cluster:** initdb scripts only run against an *empty* data directory, so on an already-bootstrapped cluster the database will **not** appear from initdb alone. The `agent-stats-db-bootstrap` Job (`clusters/ops/platform/postgres/agent-stats-db-bootstrap-job.yaml`) renames the legacy `agent_run_stats` database to `agentops_engine` on sync, then creates `agentops_engine` if still missing — **merge this PR before** `agentops-engine` PR #7 (managed project registry data layer), which switches the worker to `ENGINE_DB_NAME=agentops_engine`.
+
+If you need to run the rename manually before ArgoCD syncs (safe and idempotent):
 
 ```bash
 kubectl exec -n platform postgres-postgresql-0 -- \
-  psql -U temporal -d temporal -c "CREATE DATABASE agent_run_stats;"
+  psql -U temporal -d temporal -c "ALTER DATABASE agent_run_stats RENAME TO agentops_engine;"
 ```
 
 `postgres-exporter` also syncs automatically at Phase 2 with no manual step — it reuses the existing `postgres-credentials` secret, same as `postgres`/`temporal` themselves.
 
-`agentops-engine`'s worker creates its own `agent_run_stats` table inside that database at startup (idempotent `CREATE TABLE IF NOT EXISTS`) — nothing to do here once the database itself exists.
+`agentops-engine`'s worker creates its own `agent_run_stats` table (and `managed_projects`) inside `agentops_engine` at startup (idempotent `CREATE TABLE IF NOT EXISTS`) — nothing to do here once the database itself exists.
 
 ### 9.1 Confirm size metrics are flowing
 
@@ -697,7 +699,7 @@ kubectl exec -n platform postgres-postgresql-0 -- \
 kubectl get applications -n argocd | grep postgres-exporter   # expect Synced/Healthy
 ```
 
-Open `https://grafana.lab` → Explore → Prometheus datasource, query `pg_database_size_bytes` (every database on the shared instance) or `pg_stat_user_tables_n_live_tup{relname="agent_run_stats"}` (row count) to confirm the exporter is actually scraped. A dedicated dashboard panel for either is sub-project 4, not this phase — the metric being queryable here is what "monitor the data's size" means at this stage.
+Open `https://grafana.lab` → Explore → Prometheus datasource, query `pg_database_size_bytes` (every database on the shared instance) or `pg_stat_user_tables_n_live_tup{relname="agent_run_stats"}` (row count in the stats table) to confirm the exporter is actually scraped. A dedicated dashboard panel for either is sub-project 4, not this phase — the metric being queryable here is what "monitor the data's size" means at this stage.
 
 ---
 
@@ -765,7 +767,7 @@ k3s default CNI (flannel) does **not** enforce `NetworkPolicy`. The `dev-agents`
 
 - Model tokens and forge secrets under `secrets/` beyond what Phase 6 needs
 - LiteLLM, GlitchTip — the Alloy/LGTM stack and MailPit ship as of Phase 7 (M4 sub-project 1); these two remain M5/M6+
-- Grafana dashboards, Mission Control — M4 sub-projects 4–5, not this doc. `agent_run_stats` itself ships as of Phase 9 (M4 sub-project 3).
+- Grafana dashboards, Mission Control — M4 sub-projects 4–5, not this doc. `agentops_engine` itself ships as of Phase 9 (M4 sub-project 3).
 - `pi`/`cursor`/`codex` agent-runner images — M2 ships `claude` only
 
 See [BOOTSTRAP.md](BOOTSTRAP.md) steps 6–9 for the full M2 roadmap.

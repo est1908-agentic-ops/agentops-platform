@@ -1,9 +1,9 @@
-# Connects directly to agent_run_stats rather than temporal/postgres: Postgres's
+# Connects directly to agentops_engine rather than temporal/postgres: Postgres's
 # pg_database catalog is instance-wide, so pg_database_size_bytes still covers
 # every database on the shared instance regardless of which one this exporter
 # is connected to -- but pg_stat_user_tables (row counts, dead tuples) is only
 # exposed for the connected database's own tables. Connecting here gets both
-# "how big is the whole instance" and "how big is agent_run_stats specifically"
+# "how big is the whole instance" and "how big is agentops_engine specifically"
 # from one exporter, no custom queries file needed.
 config:
   datasource:
@@ -13,7 +13,7 @@ config:
     passwordSecret:
       name: postgres-credentials
       key: password
-    database: agent_run_stats
+    database: agentops_engine
     sslmode: disable
 
 # No Prometheus Operator/ServiceMonitor CRD installed in this stack (plain
