@@ -48,6 +48,12 @@ otelExporterOtlpEndpoint: "http://alloy.platform.svc.cluster.local:4317"
 engineDb:
   host: "postgres-postgresql.platform.svc.cluster.local"
 
+# Managed-project credential decryption (agentops-engine PR #7). The matching
+# public key for encrypt-only writes (Plan 2 control API) is documented in the
+# PR that introduced this secret — store it in control values when that lands.
+# Inert until the pinned engine chart recognizes projectCredentialPrivateKeySecretName.
+projectCredentialPrivateKeySecretName: project-credential-key
+
 githubTokenSecretName: github-token
 imagePullSecretName: registry-credentials
 claudeAuthSecretName: claude-credentials
