@@ -12,6 +12,9 @@ resources:
   - service.yaml
   - statefulset.yaml
   - initdb-configmap.yaml
+  # PostSync hook that creates the agent_run_stats database on an
+  # already-bootstrapped cluster (initdb only covers fresh PGDATA).
+  - agent-stats-db-bootstrap-job.yaml
 
 # postgres-credentials Secret (KSOPS-decrypted). Consumed by both this
 # StatefulSet (POSTGRES_PASSWORD) and Temporal (existingSecret).

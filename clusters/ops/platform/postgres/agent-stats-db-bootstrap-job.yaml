@@ -1,0 +1,56 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: agent-stats-db-bootstrap
+  namespace: platform
+  annotations:
+    # initdb-configmap.yaml's 20-agent-run-stats.sql only runs on a *fresh*
+    # PGDATA, so the agent_run_stats database is missing on any cluster that was
+    # bootstrapped before that script landed. Without the database the engine
+    # worker's ensureSchema() crash-loops at startup (agentops-engine M4
+    # sub-project 3). This Job creates it idempotently on the running instance,
+    # mirroring the litellm-db-bootstrap Job.
+    #
+    # PostSync (not PreSync like litellm's): it depends on postgres-credentials,
+    # a normal Sync-phase KSOPS Secret in this same app, so it must run after
+    # the Sync phase has applied that Secret and the StatefulSet is up. Nothing
+    # in this app's Sync phase depends on agent_run_stats, so later is fine.
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      name: agent-stats-db-bootstrap
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: create-database
+          image: postgres:16-alpine
+          env:
+            # postgres-credentials holds the `temporal` superuser password
+            # (POSTGRES_USER=temporal in statefulset.yaml). The engine worker
+            # connects to agent_run_stats as that same `temporal` user, so
+            # creating the database as temporal makes temporal its owner and no
+            # extra role/grant is needed.
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: password
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              # ON_ERROR_STOP=1 so a failed statement fails the Job instead of
+              # silently "Succeeding" without creating the database.
+              psql -h postgres-postgresql.platform.svc.cluster.local -U temporal -d temporal \
+                -v ON_ERROR_STOP=1 <<'SQL'
+              -- Idempotent; matches initdb-configmap.yaml's 20-agent-run-stats.sql
+              -- so a fresh bootstrap (initdb) and an existing cluster (this Job)
+              -- converge on the same state. CREATE DATABASE cannot run inside a
+              -- transaction block, so \gexec (not a DO block) is required.
+              SELECT 'CREATE DATABASE agent_run_stats'
+              WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'agent_run_stats')\gexec
+              SQL
