@@ -11,12 +11,20 @@ metadata:
     # sub-project 3). This Job creates it idempotently on the running instance,
     # mirroring the litellm-db-bootstrap Job.
     #
-    # PostSync (not PreSync like litellm's): it depends on postgres-credentials,
-    # a normal Sync-phase KSOPS Secret in this same app, so it must run after
-    # the Sync phase has applied that Secret and the StatefulSet is up. Nothing
-    # in this app's Sync phase depends on agent_run_stats, so later is fine.
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    # This is a NORMAL (Sync-phase) resource, deliberately NOT an argocd hook.
+    # A hook is invisible to ArgoCD's live-vs-desired diff, so adding one to an
+    # already-Synced app produces no diff, auto-sync never launches a sync
+    # operation, and the hook never fires (exactly what happened when the first
+    # version of this Job shipped as a PostSync hook — it was defined but never
+    # ran, and the worker kept crashing on "agent_run_stats does not exist").
+    # As a tracked resource its creation IS a diff, so merging it forces the
+    # sync that runs it. Ordering is safe within the Sync phase: ArgoCD applies
+    # Secret (postgres-credentials) before Job by kind, and the StatefulSet is
+    # already healthy.
+    #
+    # Replace=true: a completed Job's pod template is immutable, so if this
+    # manifest ever changes ArgoCD must delete+recreate rather than patch.
+    argocd.argoproj.io/sync-options: Replace=true
 spec:
   backoffLimit: 3
   template:
