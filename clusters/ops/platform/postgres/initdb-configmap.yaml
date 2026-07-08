@@ -15,11 +15,10 @@ data:
   10-temporal-visibility.sql: |
     SELECT 'CREATE DATABASE temporal_visibility'
     WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'temporal_visibility')\gexec
-  # agentops-engine's worker owns the agent_run_stats *table* schema (created
-  # idempotently at worker startup, see that repo's M4 sub-project 3 design
-  # doc) -- this only creates the empty database, mirroring how
-  # temporal_visibility above is created here while Temporal's own chart
-  # creates that database's tables.
-  20-agent-run-stats.sql: |
-    SELECT 'CREATE DATABASE agent_run_stats'
-    WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'agent_run_stats')\gexec
+  # agentops-engine's worker owns table schemas inside agentops_engine (created
+  # idempotently at worker startup) -- this only creates the empty database,
+  # mirroring how temporal_visibility above is created here while Temporal's own
+  # chart creates that database's tables.
+  20-agentops-engine.sql: |
+    SELECT 'CREATE DATABASE agentops_engine'
+    WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'agentops_engine')\gexec
