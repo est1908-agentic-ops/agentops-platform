@@ -29,7 +29,7 @@ The host is cattle: age key backup + these two repos + nightly pg_dump = full re
 
 - ArgoCD (not Flux), SOPS+age (not Vault), step-ca (not mkcert/self-signed), Technitium (not CoreDNS-hacks or hosts files), MailPit for non-prod SMTP. Rationale: ARCHITECTURE.md §5.1.
 - Production clusters of products are ArgoCD *destinations* defined under `clusters/prod-<product>/` — never workloads in the ops cluster (§5.7).
-- **GitHub Actions self-hosted runner runs directly on the host, not as a k3s workload.** Product CI (e.g. `docker compose`-based e2e steps) needs a Docker daemon the host already has; running the runner in-cluster would need a privileged DinD sidecar or a host-docker-socket mount, both of which undo the isolation the cluster is otherwise used for. Runner install/config is operator-managed, outside `bootstrap.sh`'s scope.
+- **GitHub Actions self-hosted runner runs directly on the host, not as a k3s workload.** Product CI (e.g. `docker compose`-based e2e steps) needs a Docker daemon the host already has; running the runner in-cluster would need a privileged DinD sidecar or a host-docker-socket mount, both of which undo the isolation the cluster is otherwise used for. Runner install/config is operator-managed, outside `bootstrap.sh`'s scope. As of 2026-07-08 the runner is live and registered (label `self-hosted`); `agentops-platform`'s own CI (`.github/workflows/lint.yaml`) now runs on it too.
 
 ## Open items to resolve during M2
 

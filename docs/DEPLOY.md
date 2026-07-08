@@ -766,7 +766,6 @@ k3s default CNI (flannel) does **not** enforce `NetworkPolicy`. The `dev-agents`
 - Model tokens and forge secrets under `secrets/` beyond what Phase 6 needs
 - LiteLLM, GlitchTip — the Alloy/LGTM stack and MailPit ship as of Phase 7 (M4 sub-project 1); these two remain M5/M6+
 - Grafana dashboards, Mission Control — M4 sub-projects 4–5, not this doc. `agent_run_stats` itself ships as of Phase 9 (M4 sub-project 3).
-- GitHub Actions self-hosted runner on the host (operator-managed)
 - `pi`/`cursor`/`codex` agent-runner images — M2 ships `claude` only
 
 See [BOOTSTRAP.md](BOOTSTRAP.md) steps 6–9 for the full M2 roadmap.

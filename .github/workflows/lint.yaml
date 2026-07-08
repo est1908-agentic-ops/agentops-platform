@@ -7,9 +7,11 @@ on:
 
 jobs:
   shellcheck:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v5
+      - name: Ensure shellcheck is installed
+        run: command -v shellcheck || (sudo apt-get update && sudo apt-get install -y shellcheck)
       - name: shellcheck
         run: shellcheck bootstrap/bootstrap.sh scripts/validate-manifests.sh
 
@@ -17,7 +19,7 @@ jobs:
     # Static manifest checks that need no secrets: SSH-only repoURLs and that every
     # KSOPS-referenced encrypted secret file exists. Catches the mistakes that have
     # broken the live cluster on merge (see scripts/validate-manifests.sh).
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v5
       - name: validate manifests (static)
@@ -30,7 +32,7 @@ jobs:
     # secret is configured; otherwise it skips with a notice. To enable: add the age
     # private key (the same one bootstrap wires into the ArgoCD repo-server) as the repo
     # secret SOPS_AGE_KEY.
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v5
 
