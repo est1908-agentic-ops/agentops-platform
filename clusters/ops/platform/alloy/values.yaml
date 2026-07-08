@@ -1,7 +1,8 @@
 # Two jobs (ARCHITECTURE.md §5.4/§5.6): receive OTLP traces from instrumented
-# workers/agent-runner Jobs and forward to Tempo; tail every pod's container
-# logs cluster-wide and forward to Loki. The chart doesn't expose ports for
-# whatever components the config below defines -- extraPorts does that.
+# workers/agent-runner Jobs and forward to Tempo; tail dev-agents' and
+# platform's pod container logs and forward to Loki (scope rationale is on
+# discovery.kubernetes below). The chart doesn't expose ports for whatever
+# components the config below defines -- extraPorts does that.
 alloy:
   configMap:
     content: |
@@ -27,8 +28,21 @@ alloy:
         }
       }
 
+      // Scoped to the two namespaces that actually need log collection.
+      // Unscoped discovery watches every pod cluster-wide (argocd,
+      // cert-manager, temporal, postgres, ...), which inflates the number of
+      // concurrent tailers loki.source.kubernetes holds open. That component
+      // has a known fd/inotify-instance leak under high pod churn
+      // (grafana/alloy#1217) -- dev-agents spawns one ephemeral Job pod per
+      // runAgent call, so narrowing scope here reduces how fast that leak
+      // reaches the node's inotify instance ceiling (see bootstrap.sh's
+      // tune_kernel_params for the other half of this mitigation: raising
+      // that ceiling).
       discovery.kubernetes "pods" {
         role = "pod"
+        namespaces {
+          names = ["dev-agents", "platform"]
+        }
       }
 
       discovery.relabel "pods" {
