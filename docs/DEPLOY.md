@@ -1,9 +1,9 @@
-# Real cluster deploy — flair-hr/agentops-platform
+# Real cluster deploy — est1908-agentic-ops/agentops-platform
 
 Copy-paste runbook for standing up the ops cluster on a **fresh Ubuntu/Debian LTS host** (VPS or bare metal). Assumes a single-node k3s cluster managed by ArgoCD watching this repo.
 
-**Repo:** [github.com/flair-hr/agentops-platform](https://github.com/flair-hr/agentops-platform)  
-**Git URL (ArgoCD):** `git@github.com:flair-hr/agentops-platform.git` (SSH deploy key — see Phase 4)  
+**Repo:** [github.com/est1908-agentic-ops/agentops-platform](https://github.com/est1908-agentic-ops/agentops-platform)  
+**Git URL (ArgoCD):** `https://github.com/est1908-agentic-ops/agentops-platform.git` (token-based HTTPS credential — see Phase 4)  
 **Branch:** `main`
 
 For design rationale and decisions, see [BOOTSTRAP.md](BOOTSTRAP.md). This doc is the operator checklist only.
@@ -32,7 +32,7 @@ Everything after bootstrap is GitOps — no further `kubectl apply` for platform
 | Host | Ubuntu 22.04/24.04 or Debian 12+, root/sudo, ≥4 GB RAM, ≥40 GB disk |
 | Network | Inbound 80/443 if exposing Ingress; UDP/TCP 53 if Technitium serves DNS externally |
 | Workstation | macOS or Linux — see [Workstation setup (macOS)](#workstation-setup-macos) for tools |
-| GitHub access | ArgoCD must read `flair-hr/agentops-platform` — for a **private** repo, configure a repo credential in ArgoCD (see [Private repo access](#private-repo-access)) |
+| GitHub access | ArgoCD must read `est1908-agentic-ops/agentops-platform` — for a **private** repo, configure a repo credential in ArgoCD (see [Private repo access](#private-repo-access)) |
 
 ---
 
@@ -58,7 +58,7 @@ brew install age sops git
 |------|---------|
 | `age` | Provides `age-keygen` and decryption; SOPS uses age under the hood |
 | `sops` | Encrypt/decrypt files under `secrets/` |
-| `git` | Clone, commit, and push to `flair-hr/agentops-platform` |
+| `git` | Clone, commit, and push to `est1908-agentic-ops/agentops-platform` |
 
 `openssl` is already on macOS (used to generate the Postgres password).
 
@@ -79,7 +79,7 @@ brew install gh kubectl kustomize helm jq
 
 ```bash
 gh auth login
-gh repo view flair-hr/agentops-platform
+gh repo view est1908-agentic-ops/agentops-platform
 ```
 
 If the repo is private, ensure your account has read access before pushing secrets.
@@ -87,7 +87,7 @@ If the repo is private, ensure your account has read access before pushing secre
 ### Clone the repo
 
 ```bash
-git clone https://github.com/flair-hr/agentops-platform.git
+git clone git@github-est1908:est1908-agentic-ops/agentops-platform.git ~/agentops-platform
 cd agentops-platform
 ```
 
@@ -176,7 +176,7 @@ Store the password somewhere safe if you need manual `psql` access later.
 All ArgoCD Applications and `bootstrap/root-app.yaml` should reference:
 
 ```yaml
-repoURL: git@github.com:flair-hr/agentops-platform.git
+repoURL: https://github.com/est1908-agentic-ops/agentops-platform.git
 ```
 
 Push any local changes (age recipient, postgres secret, bootstrap manifests) to `main` before bootstrapping the host.
@@ -197,7 +197,7 @@ Choose **A** (manual script) or **B** (cloud-init). Do not run both on the same 
 ssh-keygen -t ed25519 -f agentops-platform-deploy-key -N ""
 ```
 
-Add the **public** key (`agentops-platform-deploy-key.pub`) at `flair-hr/agentops-platform` → Settings → Deploy keys → Add deploy key. Leave "Allow write access" **unchecked** — the host only reads.
+Add the **public** key (`agentops-platform-deploy-key.pub`) at `est1908-agentic-ops/agentops-platform` → Settings → Deploy keys → Add deploy key. Leave "Allow write access" **unchecked** — the host only reads.
 
 **On the host:**
 
@@ -209,7 +209,7 @@ mkdir -p ~/.ssh && chmod 700 ~/.ssh
 chmod 600 ~/.ssh/agentops-platform-deploy-key
 
 GIT_SSH_COMMAND="ssh -i ~/.ssh/agentops-platform-deploy-key -o IdentitiesOnly=yes" \
-  git clone git@github.com:flair-hr/agentops-platform.git ~/agentops-platform
+  git clone git@github.com:est1908-agentic-ops/agentops-platform.git ~/agentops-platform
 cd ~/agentops-platform
 
 sudo ./bootstrap/bootstrap.sh --age-key-file /path/to/age.key
@@ -227,7 +227,7 @@ Re-running the same command is safe (idempotent).
 
 1. On your workstation, edit `bootstrap/cloud-init.yaml`:
    - Replace the `age.key` `content:` block with your real private key (lines starting with `AGE-SECRET-KEY-`).
-   - Confirm embedded `repoURL` is `git@github.com:flair-hr/agentops-platform.git`.
+   - Confirm embedded `repoURL` is `https://github.com/est1908-agentic-ops/agentops-platform.git`.
 2. Paste the **entire file** into the provider's user-data / cloud-init field at VM creation.
 3. Wait for first boot (~5–15 min depending on network).
 
@@ -395,21 +395,22 @@ Or open `https://temporal.lab` in a browser — expect a valid cert from step-ca
 
 ## Phase 4 — Private repo access
 
-`flair-hr/agentops-platform` is **private**, so ArgoCD needs credentials before it can clone it — required before Phase 2's `root` Application can ever reach `Synced` (every `repoURL` in this repo, including `bootstrap/root-app.yaml`, is now the SSH form `git@github.com:flair-hr/agentops-platform.git`, matching the deploy key generated in Phase 1A).
+`est1908-agentic-ops/agentops-platform` is **private**, so ArgoCD needs credentials before it can clone it — required before Phase 2's `root` Application can ever reach `Synced` (every `repoURL` in this repo, including `bootstrap/root-app.yaml`, is now the HTTPS form `https://github.com/est1908-agentic-ops/agentops-platform.git`). ArgoCD authenticates this over HTTPS with a personal access token (PAT), not the Phase 1A deploy key — that key is a separate, SSH-only credential scoped to the host's own `git clone`, unrelated to ArgoCD's repo-server credential.
 
 **Do this before or immediately after Phase 1** — if `root`'s sync status is stuck on `Unknown` with no child Applications appearing in Phase 2, this is almost always why.
 
-Reuse the same deploy key from Phase 1A if you still have its private half, or generate a fresh one (Settings → Deploy keys, read access is enough — ArgoCD only needs to read):
+Generate a PAT with read access to this repo (fine-grained PAT scoped to just this repo, or a classic PAT with `repo` scope), then register it as an ArgoCD repository credential:
 
 ```bash
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
-kubectl -n argocd create secret generic repo-flair-hr-agentops \
+kubectl -n argocd create secret generic repo-est1908-agentops \
   --from-literal=type=git \
-  --from-literal=url=git@github.com:flair-hr/agentops-platform.git \
-  --from-file=sshPrivateKey=/path/to/agentops-platform-deploy-key
+  --from-literal=url=https://github.com/est1908-agentic-ops/agentops-platform.git \
+  --from-literal=username=est1908 \
+  --from-literal=password=<PAT>
 
-kubectl -n argocd label secret repo-flair-hr-agentops \
+kubectl -n argocd label secret repo-est1908-agentops \
   argocd.argoproj.io/secret-type=repository
 ```
 

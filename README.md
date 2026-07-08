@@ -29,7 +29,7 @@ Fresh Ubuntu 22.04/24.04 or Debian 12+, ≥4 GB RAM / ≥40 GB disk. Two ways to
 
 ```bash
 GIT_SSH_COMMAND="ssh -i ~/.ssh/agentops-platform-deploy-key -o IdentitiesOnly=yes" \
-  git clone git@github.com:flair-hr/agentops-platform.git ~/agentops-platform
+  git clone git@github.com:est1908-agentic-ops/agentops-platform.git ~/agentops-platform
 cd ~/agentops-platform
 # copy your age.key to the host too (scp, etc.) — never commit it
 sudo ./bootstrap/bootstrap.sh --age-key-file /path/to/age.key

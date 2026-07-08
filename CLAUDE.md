@@ -5,27 +5,30 @@ renders every child Application under `clusters/ops/`. ArgoCD syncs from
 `origin/main`, so a broken manifest merged to `main` breaks the live cluster even if
 the branch you tested from looked fine.
 
-## Git repo references MUST use the SSH URL
+## Git repo references MUST use the HTTPS URL
 
 Every ArgoCD `Application` (and the `root` app) must reference this repo as:
 
 ```yaml
-repoURL: git@github.com:flair-hr/agentops-platform.git
+repoURL: https://github.com/est1908-agentic-ops/agentops-platform.git
 ```
 
-- The repo is **private**. ArgoCD only has an **SSH** repository credential
-  registered (`repo-flair-hr-agentops` secret). There is **no HTTPS credential**.
-- Using `https://github.com/flair-hr/agentops-platform.git` makes ArgoCD fail with
-  `authentication required: Repository not found` — the app shows `Sync: Unknown`
+- The repo is **private**. ArgoCD authenticates over HTTPS with a token-based
+  repository credential (`repo-est1908-agentops` secret — `username`/`password`,
+  password is a PAT). There is **no SSH deploy key credential** registered for this
+  repo in ArgoCD.
+- Using `git@github.com:est1908-agentic-ops/agentops-platform.git` makes ArgoCD fail
+  with `authentication required: Repository not found` — the app shows `Sync: Unknown`
   and silently stops reconciling (health may still read "Healthy" vacuously).
-- When adding or copying an `application.yaml`, always match the SSH `repoURL` used
-  by the existing apps. Do not paste the GitHub browser (HTTPS) URL.
+- When adding or copying an `application.yaml`, always match the HTTPS `repoURL` used
+  by the existing apps. Do not paste the SSH (`git@github.com:...`) form.
 
 Quick check before committing any new/edited Application:
 
 ```bash
-grep -rn "repoURL" --include="*.yaml" clusters/ bootstrap/ | grep -v 'git@github.com'
-# ^ must return nothing
+grep -rn "repoURL" --include="*.yaml" clusters/ bootstrap/ | grep -v 'https://github.com'
+# ^ must return nothing (the engine chart's oci:// repoURL is a separate,
+#   registry-based source and is expected not to match)
 ```
 
 ## Working conventions

@@ -91,7 +91,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/flair-hr/agentops-platform.git
+    repoURL: https://github.com/est1908-agentic-ops/agentops-platform.git
     targetRevision: main
     path: clusters/ops/engine-secrets
   destination:

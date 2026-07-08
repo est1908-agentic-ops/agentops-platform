@@ -1,7 +1,7 @@
 # `agent_run_stats` Database + Size Monitoring — Design
 
 Status: draft · 2026-07-07 · Owner: Artem
-Milestone: M4, sub-project 3 of 5 (see [decomposition](https://github.com/flair-hr/agentops-engine/blob/main/docs/superpowers/specs/2026-07-06-m4-decomposition.md) and [engine-side design](https://github.com/flair-hr/agentops-engine/blob/main/docs/superpowers/specs/2026-07-07-agent-run-stats-design.md) in `agentops-engine`)
+Milestone: M4, sub-project 3 of 5 (see [decomposition](https://github.com/est1908-agentic-ops/agentops-engine/blob/main/docs/superpowers/specs/2026-07-06-m4-decomposition.md) and [engine-side design](https://github.com/est1908-agentic-ops/agentops-engine/blob/main/docs/superpowers/specs/2026-07-07-agent-run-stats-design.md) in `agentops-engine`)
 
 ## Context
 

@@ -6,10 +6,10 @@
 # Catches the classes of mistake that have broken the live cluster on merge to main,
 # WITHOUT needing the SOPS age key (so it runs with zero secrets configured):
 #
-#   1. An ArgoCD Application repoURL pointing at GitHub over HTTPS. The repo is
-#      private and ArgoCD has an SSH credential only, so an HTTPS repoURL fails with
-#      "authentication required: Repository not found" and the app silently stops
-#      reconciling. See CLAUDE.md.
+#   1. An ArgoCD Application repoURL pointing at GitHub over SSH. The repo is
+#      private and ArgoCD has a token-based (HTTPS) credential only, so an SSH
+#      repoURL fails with "authentication required: Repository not found" and the
+#      app silently stops reconciling. See CLAUDE.md.
 #   2. A KSOPS secret-generator referencing an encrypted secret file that was never
 #      committed -- ArgoCD manifest generation then fails with
 #      "no such file or directory" and the app goes Sync: Unknown.
@@ -24,17 +24,17 @@ cd "$(dirname "$0")/.."
 
 fail=0
 
-echo "== check 1: ArgoCD Application repoURLs use the SSH URL =="
-if matches=$(grep -rnE "repoURL:[[:space:]]*[\"']?https://github.com/flair-hr" \
+echo "== check 1: ArgoCD Application repoURLs use the HTTPS URL =="
+if matches=$(grep -rnE "repoURL:[[:space:]]*[\"']?git@github\.com:est1908-agentic-ops" \
       --include="*.yaml" clusters/ bootstrap/); then
   {
-    echo "ERROR: HTTPS GitHub repoURL(s) found (repo is private, SSH credential only):"
+    echo "ERROR: SSH GitHub repoURL(s) found (repo is private, token-based HTTPS credential only):"
     echo "$matches"
-    echo "  -> use git@github.com:flair-hr/agentops-platform.git"
+    echo "  -> use https://github.com/est1908-agentic-ops/agentops-platform.git"
   } >&2
   fail=1
 else
-  echo "OK: no HTTPS GitHub repoURLs"
+  echo "OK: no SSH GitHub repoURLs"
 fi
 
 echo
