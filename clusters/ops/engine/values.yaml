@@ -52,6 +52,14 @@ imagePullSecretName: registry-credentials
 claudeAuthSecretName: claude-credentials
 piAuthSecretName: pi-credentials
 
+# Provider-rate-limit fallback (agentops-engine
+# docs/superpowers/specs/2026-07-08-provider-rate-limit-fallback-design.md):
+# retries once against this model on a real 429 from the primary model. Both
+# models route through the `pi` CLI's own provider support, so this needs no
+# new backend wiring -- just OPENROUTER_API_KEY, already present in the
+# pi-credentials secret (see secrets/model-tokens/pi-credentials.enc.yaml).
+piRateLimitFallbackModel: "openrouter/deepseek-v4-pro"
+
 # First real product. DO NOT MERGE this entry until
 # secrets/forge/github-token-broccoli.enc.yaml exists and is added to
 # clusters/ops/engine-secrets/secret-generator.yaml's files list in the SAME
