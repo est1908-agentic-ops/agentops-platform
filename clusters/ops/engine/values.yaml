@@ -82,19 +82,6 @@ piAuthSecretName: pi-credentials
 # pi-credentials secret (see secrets/model-tokens/pi-credentials.enc.yaml).
 piRateLimitFallbackModel: "openrouter/deepseek-v4-pro"
 
-# First real product. DO NOT MERGE this entry until
-# secrets/forge/github-token-broccoli.enc.yaml exists and is added to
-# clusters/ops/engine-secrets/secret-generator.yaml's files list in the SAME
-# merge -- engine-secrets and engine both auto-sync on every push to main, and
-# the worker/gateway Deployments hard-require every registered project's
-# secretKeyRef to resolve to an existing Secret to start at all. Registering a
-# project without its secret crash-loops the whole shared fleet, not just
-# this product's tasks.
-projects:
-  broccoli:
-    repo: broccoli-hr/broccoli
-    githubTokenSecretName: github-token-broccoli
-
 gateway:
   # Real public hostname for GitHub's webhook delivery — the letsencrypt
   # ClusterIssuer (clusters/ops/platform/letsencrypt) issues a real,
