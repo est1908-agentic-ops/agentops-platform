@@ -48,11 +48,16 @@ otelExporterOtlpEndpoint: "http://alloy.platform.svc.cluster.local:4317"
 engineDb:
   host: "postgres-postgresql.platform.svc.cluster.local"
 
-# Managed-project credential decryption (agentops-engine PR #7). The matching
-# public key for encrypt-only writes (Plan 2 control API) is documented in the
-# PR that introduced this secret — store it in control values when that lands.
-# Inert until the pinned engine chart recognizes projectCredentialPrivateKeySecretName.
+# Managed-project credential decryption (agentops-engine PR #7).
 projectCredentialPrivateKeySecretName: project-credential-key
+
+# Base64 SPKI DER public key matching project-credential-key's private half.
+# Not a secret (agentops-engine packages/activities/src/credential-crypto.ts) --
+# control only ever encrypts with it, so it's a plain value, not a
+# secretKeyRef. Derived from the existing secrets/engine/project-credential-key.enc.yaml
+# private key via `crypto.createPublicKey(privateKeyObject)`. Without this,
+# control's /api/projects CRUD routes stay 503 even with CONTROL_CRUD_TOKEN set.
+projectCredentialPublicKey: "MCowBQYDK2VuAyEAAuidf7MeAA2Q0X6n8zQ/ug7mH0htTFwL8F6i8Uyxtig="
 
 # Operator bearer token gating control's /api/projects CRUD routes
 # (agentops-engine PR #11). Sent as X-Control-Crud-Token, not Authorization,
