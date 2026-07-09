@@ -54,6 +54,14 @@ engineDb:
 # Inert until the pinned engine chart recognizes projectCredentialPrivateKeySecretName.
 projectCredentialPrivateKeySecretName: project-credential-key
 
+# Operator bearer token gating control's /api/projects CRUD routes
+# (agentops-engine PR #11). Sent as X-Control-Crud-Token, not Authorization,
+# to avoid colliding with Traefik basic-auth on the control ingress. Matching
+# secret added in the same merge (secrets/engine/control-crud-token.enc.yaml +
+# engine-secrets/secret-generator.yaml) — without both, this stays inert and
+# the routes 503.
+projectCrudTokenSecretName: control-crud-token
+
 githubTokenSecretName: github-token
 imagePullSecretName: registry-credentials
 claudeAuthSecretName: claude-credentials
