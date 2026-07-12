@@ -19,3 +19,4 @@ resources:
   - platform/postgres-exporter/application.yaml
   - engine-secrets/application.yaml
   - engine/application.yaml
+  - project-workers/applicationset.yaml
