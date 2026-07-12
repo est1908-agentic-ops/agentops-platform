@@ -13,12 +13,12 @@ namespace: dev-agents
 # stays CHANGEME until the next agentops-engine CI run sets a real value.
 image:
   repository: gitactions.est1908.top/agentic-ops
-  workerTag: "c737dc24345566dbc17858ed9dcc5aa87e1279a9"
-  agentRunnerTag: "c737dc24345566dbc17858ed9dcc5aa87e1279a9"
-  gatewayTag: "c737dc24345566dbc17858ed9dcc5aa87e1279a9"
+  workerTag: "7ae530517316401f7620d4ea07c6400a65de5946"
+  agentRunnerTag: "7ae530517316401f7620d4ea07c6400a65de5946"
+  gatewayTag: "7ae530517316401f7620d4ea07c6400a65de5946"
   # Platform console (agentops-engine PR #25). Pinned to the merge commit until
   # the next engine CI bump lands; re-run engine main CI if the image is missing.
-  controlTag: "c737dc24345566dbc17858ed9dcc5aa87e1279a9"
+  controlTag: "7ae530517316401f7620d4ea07c6400a65de5946"
   pullPolicy: IfNotPresent
 
 temporalAddress: "temporal-frontend.platform.svc.cluster.local:7233"
