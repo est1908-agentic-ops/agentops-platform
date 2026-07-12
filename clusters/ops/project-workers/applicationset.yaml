@@ -1,0 +1,43 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: project-workers
+  namespace: argocd
+spec:
+  goTemplate: true
+  generators:
+    - git:
+        repoURL: https://github.com/est1908-agentic-ops/agentops-platform.git
+        revision: main
+        files:
+          - path: clusters/ops/project-workers/workers.yaml
+  template:
+    metadata:
+      name: 'project-worker-{{.project}}'
+      namespace: argocd
+    spec:
+      project: default
+      source:
+        repoURL: oci://gitactions.est1908.top/agentic-ops/project-worker
+        chart: project-worker
+        targetRevision: "0.0.0-cb8f0eeeea4ce1f2f2ef337a6f1209433b779a3b"
+        helm:
+          releaseName: '{{.project}}'
+          valuesObject:
+            project: '{{.project}}'
+            image: '{{.image}}'
+            taskQueue: '{{.taskQueue}}'
+            temporal:
+              address: temporal-frontend.platform.svc.cluster.local:7233
+              namespace: dev-agents
+            otel:
+              endpoint: http://alloy.platform.svc.cluster.local:4317
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: dev-agents
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
