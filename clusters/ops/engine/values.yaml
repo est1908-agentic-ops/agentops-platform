@@ -83,6 +83,12 @@ piAuthSecretName: pi-credentials
 piRateLimitFallbackModel: "openrouter/deepseek-v4-pro"
 
 gateway:
+  # Enables the ArgoCD project-workers plugin-generator route on the gateway
+  # (POST /api/v1/getparams.execute). Points at the Secret the engine-secrets
+  # ksops generator produces from secrets/engine/argocd-plugin-token.enc.yaml
+  # (key ARGOCD_PLUGIN_TOKEN). Consumed by the project-workers ApplicationSet
+  # via clusters/ops/project-workers/plugin-configmap.yaml.
+  argocdPluginTokenSecretName: argocd-plugin-token
   # Real public hostname for GitHub's webhook delivery — the letsencrypt
   # ClusterIssuer (clusters/ops/platform/letsencrypt) issues a real,
   # publicly-trusted cert for it via HTTP-01 through Traefik. Requires port 80

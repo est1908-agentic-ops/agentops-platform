@@ -1,0 +1,26 @@
+# ArgoCD ApplicationSet plugin-generator config for the project-workers set.
+# The generator POSTs to <baseUrl>/api/v1/getparams.execute with
+# `Authorization: Bearer <token>` and expects { output: { parameters: [...] } }.
+# The endpoint is the engine gateway (project-worker-onboarding spec §6.2,
+# Option A — hosted on the gateway, which holds the private key, NOT the
+# encrypt-only control).
+#
+# `token` uses ArgoCD's `$<secretName>:<key>` indirection: it resolves against a
+# Secret named `argocd-plugin-token` in the argocd namespace with key `token`,
+# holding the SAME value as secrets/engine/argocd-plugin-token.enc.yaml
+# (ARGOCD_PLUGIN_TOKEN). See the PR runbook for creating that argocd-namespace
+# Secret — there is no existing GitOps generator for argocd-namespace secrets in
+# this repo, so it is a documented one-time step.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: project-workers-plugin
+  namespace: argocd
+data:
+  # Gateway in-cluster Service: `{release}-gateway` in the engine namespace,
+  # port from gateway.port (3000). Release name is `engine`.
+  baseUrl: "http://engine-gateway.dev-agents.svc.cluster.local:3000"
+  token: "$argocd-plugin-token:token"
+  # ArgoCD signs plugin requests; requeue so image-tag changes in agents.json
+  # are picked up within a few minutes.
+  requeueAfterSeconds: "180"

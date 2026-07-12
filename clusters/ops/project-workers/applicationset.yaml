@@ -6,11 +6,17 @@ metadata:
 spec:
   goTemplate: true
   generators:
-    - git:
-        repoURL: https://github.com/est1908-agentic-ops/agentops-platform.git
-        revision: main
-        files:
-          - path: clusters/ops/project-workers/workers.yaml
+    # Repo-sourced (project-worker-onboarding SP-b): the worker spec is read
+    # from each managed project's agents.json `worker` block by the engine
+    # gateway, not a git-file list. See plugin-configmap.yaml. (The former
+    # git-file generator over workers.yaml is superseded; workers.yaml is kept
+    # only until every project has migrated its worker block — see the PR runbook.)
+    - plugin:
+        configMapRef:
+          name: project-workers-plugin
+        input:
+          parameters: {}
+        requeueAfterSeconds: 180
   template:
     metadata:
       name: 'project-worker-{{.project}}'
