@@ -1,3 +1,3 @@
 - project: broccoli
-  image: gitactions.est1908.top/broccoli/agentops-worker:49d68d4
+  image: gitactions.est1908.top/broccoli/agentops-worker:29759d8
   # taskQueue omitted -> proj-broccoli
