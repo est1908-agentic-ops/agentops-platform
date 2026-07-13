@@ -11,7 +11,7 @@ spec:
     # `chart` field to it, so a bare …/agentic-ops resolves the wrong artifact and 404s.
     - repoURL: oci://gitactions.est1908.top/agentic-ops/engine
       chart: engine
-      targetRevision: "0.0.0-07a8b4b2fc512b15e1c25bd592615e75abac85b2"
+      targetRevision: "0.0.0-7a05b2ca5fee3e958cf81cc82609571eab7f3bd9"
       helm:
         releaseName: engine
         valueFiles:
