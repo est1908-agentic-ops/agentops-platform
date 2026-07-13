@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: project-workers-secret
+  namespace: argocd
+  annotations:
+    # Before project-workers: the ApplicationSet's plugin generator calls the
+    # gateway with this token, so the Secret must exist first.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/est1908-agentic-ops/agentops-platform.git
+    targetRevision: main
+    path: clusters/ops/project-workers-secret
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  # selfHeal recreates the Secret if it's ever deleted out-of-band (the failure
+  # that took the generator blind when it was a manual, un-GitOps'd Secret).
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
