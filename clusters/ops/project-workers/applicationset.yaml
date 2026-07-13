@@ -9,8 +9,8 @@ spec:
     # Repo-sourced (project-worker-onboarding SP-b): the worker spec is read
     # from each managed project's agents.json `worker` block by the engine
     # gateway, not a git-file list. See plugin-configmap.yaml. (The former
-    # git-file generator over workers.yaml is superseded; workers.yaml is kept
-    # only until every project has migrated its worker block — see the PR runbook.)
+    # git-file generator over workers.yaml is fully superseded and that file
+    # has been removed — broccoli's worker now lives in its agents.json.)
     - plugin:
         configMapRef:
           name: project-workers-plugin
