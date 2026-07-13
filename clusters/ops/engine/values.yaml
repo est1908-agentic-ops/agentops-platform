@@ -26,6 +26,13 @@ temporalAddress: "temporal-frontend.platform.svc.cluster.local:7233"
 # Temporal Web UI base URL for "Open in Temporal" links in the platform console.
 temporalUiBaseUrl: "https://temporal.agentic-ops.est1908.top"
 
+# Secret name for the platform role's Job credentials (TEMPORAL_HOST,
+# GRAFANA_HOST, GRAFANA_USER, GRAFANA_PASSWORD), mounted via envFrom
+# (packages/worker/src/main.ts buildBackends). See
+# secrets/engine/platform-agent-credentials.enc.yaml + this repo's
+# engine-secrets generator.
+platformAgentSecretName: platform-agent-credentials
+
 # M4 sub-project 2 (agentops-engine): OTel spans export to Alloy's OTLP
 # endpoint, deployed in M4 sub-project 1. See that repo's
 # docs/superpowers/specs/2026-07-07-otel-instrumentation-design.md.
