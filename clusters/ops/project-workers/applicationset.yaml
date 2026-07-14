@@ -26,7 +26,7 @@ spec:
       source:
         repoURL: oci://gitactions.est1908.top/agentic-ops/project-worker
         chart: project-worker
-        targetRevision: "0.0.0-cf10996f57a090d41c95ffc15812bc3613774f48"
+        targetRevision: "0.0.0-3f1611e706b2d231e03c05d9d5b1508250e11509"
         helm:
           releaseName: '{{.project}}'
           valuesObject:
