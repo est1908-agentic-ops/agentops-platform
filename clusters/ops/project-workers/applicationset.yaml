@@ -29,22 +29,25 @@ spec:
         targetRevision: "0.0.0-721a190117a84b641212611cd9c1bccb4397f7b7"
         helm:
           releaseName: '{{.project}}'
-          valuesObject:
-            project: '{{.project}}'
-            image: '{{.image}}'
-            taskQueue: '{{ default "" .taskQueue }}'
+          # One templated `values` string, NOT valuesObject: ArgoCD does not
+          # compose the two — when both are set, valuesObject silently wins
+          # and everything in `values` is discarded (argoproj/argo-cd#21132),
+          # which is how externalSecretRefs got dropped on first deploy.
+          # externalSecretRefs arrives from the gateway as a JSON-encoded
+          # string array (plugin params are string-valued); inlining it works
+          # because JSON is valid YAML. The `if` guards a gateway that
+          # predates the param (a missing key would render the literal string
+          # "<no value>" and break the chart's list-typed value); the chart
+          # default [] applies then.
+          values: |
+            project: {{ .project | quote }}
+            image: {{ .image | quote }}
+            taskQueue: {{ default "" .taskQueue | quote }}
             temporal:
               address: temporal-frontend.platform.svc.cluster.local:7233
               namespace: dev-agents
             otel:
               endpoint: http://alloy.platform.svc.cluster.local:4317
-          # externalSecretRefs arrives from the gateway as a JSON-encoded string
-          # array (ArgoCD plugin params are string-valued), so it can't live in
-          # valuesObject — inlining it here works because JSON is valid YAML.
-          # The `if` guards a gateway that predates the param (missing key
-          # would otherwise render the literal string "<no value>" and break
-          # the chart's list-typed value); chart default [] applies then.
-          values: |
             {{- if .externalSecretRefs }}
             externalSecretRefs: {{ .externalSecretRefs }}
             {{- end }}
