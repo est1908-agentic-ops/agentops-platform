@@ -1,43 +1,45 @@
 # agentops-platform
 
-GitOps **state** of the agentic ops platform: everything ArgoCD deploys and reconciles — platform components, engine deployment (pinned image tags), product registry, and SOPS-encrypted secrets. The **code** lives in the sibling repo `agentops-engine`; that repo builds images, this repo pins and deploys them.
+The GitOps home of **Agentic Ops** — a self-hosted platform where AI coding agents live and work: they pick up GitHub issues, design, implement, review, open PRs, babysit CI, hunt bugs, and patch the platform itself.
 
-Design authority: `agentops-engine/docs/ARCHITECTURE.md` (§5.1 cluster base, §5.7 multi-product topology, §5.8 repo layout). Bootstrap procedure: [docs/BOOTSTRAP.md](docs/BOOTSTRAP.md). **Real cluster deploy runbook:** [docs/DEPLOY.md](docs/DEPLOY.md).
+> The human provides the idea. Implementation, maintenance, QA, monitoring,
+> delivery, bug fixing, and support can be automated.
 
-## Principles
+This repo is the **state** of that platform: everything ArgoCD deploys and reconciles — platform components, the engine deployment (pinned image tags), and SOPS-encrypted secrets. The **code** (Temporal workflows, agent runner, gateway, console) lives in the sibling repo [`agentops-engine`](https://github.com/est1908-agentic-ops/agentops-engine); that repo builds images, this repo pins and deploys them.
 
-- **Config is the state.** If it's not in this repo, it doesn't exist in the cluster. Manual `kubectl apply`/`helm install` is a bug — fix by PR.
-- **Rollback = `git revert`.** This repo's history is the deployment history; keep commits single-purpose (one component bump / one product change per commit).
-- **Secrets are SOPS/age-encrypted, always.** Plaintext secrets must never be committed — `.sops.yaml` defines which paths must be encrypted. The age private key exists only in the ArgoCD namespace and admin backups; agents work in this repo without ever seeing plaintext.
-- **Agents change infra by PR** like everyone else; ArgoCD is the only thing that touches the cluster.
+## The idea
 
-## How ArgoCD uses this repo
+Working with coding agents quickly turns into juggling — several projects, several agents, prompts like *"wait for review comments, fix them all, make sure CI is green, don't touch me, I went to sleep"*. You end up being the orchestrator.
 
-This repo *is* the GitOps source of truth ArgoCD watches — not where application code lives (that's `agentops-engine`).
+Agentic Ops flips that: a friendly office environment for digital workers, running on a single cheap VPS.
 
-1. `bootstrap/bootstrap.sh` installs k3s + ArgoCD on a fresh host, then applies `bootstrap/root-app.yaml`.
-2. `root-app.yaml` is an ArgoCD "app-of-apps" `Application` pointing at this repo's `clusters/ops` path on `main`.
-3. ArgoCD reconciles everything under `clusters/ops/{platform,engine,products}/` — each subdirectory is one or more `Application` CRs defined here.
+- **Autonomous** — write down your ideas in the evening, label the issues, go to sleep. Review PRs in the morning.
+- **Durable** — every workflow runs on [Temporal](https://temporal.io): resumable, retryable, inspectable mid-flight.
+- **Observable** — OTel traces, logs, and metrics for every agent run: Grafana over Loki / Tempo / Prometheus.
+- **Self-hosted, multi-everything** — multi-model, multi-provider, multi-repo. Your infrastructure, your tokens.
+- **Everything as code** — this repo *is* the cluster. Changes land by PR; rollback is `git revert`. Agents change the infrastructure the same way people do.
+
+Built-in workflows include the dev cycle (design → plan → implement → review → PR babysit), PR fixing, bug hunting, and platform self-healing. A managed project can define its own custom workflows — nightly QA, scheduled security reviews, whatever fits in a Temporal workflow.
+
+## How it works
+
+1. `bootstrap/bootstrap.sh` (or `bootstrap/cloud-init.yaml` as VPS user-data) installs k3s and ArgoCD with KSOPS on a fresh host, then applies `bootstrap/root-app.yaml`.
+2. `root-app.yaml` is an ArgoCD app-of-apps pointing at this repo's `clusters/ops` path on `main`.
+3. ArgoCD reconciles everything under `clusters/ops/` from there on.
 
 Merging a PR to `main` is what changes the cluster; there is no other path.
 
-## Deploy to a VPS
+## What runs on the cluster
 
-Fresh Ubuntu 22.04/24.04 or Debian 12+, ≥4 GB RAM / ≥40 GB disk. Two ways to bootstrap:
-
-**A. Manual (existing VM / SSH session):** this is a private repo, so the host needs a read-only [deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys) to clone it — see [docs/DEPLOY.md](docs/DEPLOY.md) Phase 1A for generating and registering one. Once you have it on the host:
-
-```bash
-GIT_SSH_COMMAND="ssh -i ~/.ssh/agentops-platform-deploy-key -o IdentitiesOnly=yes" \
-  git clone git@github.com:est1908-agentic-ops/agentops-platform.git ~/agentops-platform
-cd ~/agentops-platform
-# copy your age.key to the host too (scp, etc.) — never commit it
-sudo ./bootstrap/bootstrap.sh --age-key-file /path/to/age.key
-```
-
-**B. Cloud-init (fresh VPS):** paste `bootstrap/cloud-init.yaml` (with your real age private key filled in) into the provider's user-data field at VM creation — the host boots straight into a working platform, no SSH step needed.
-
-Either path installs k3s (Traefik bundled) + ArgoCD with KSOPS, then ArgoCD takes over reconciling everything else from this repo. Re-running `bootstrap.sh` is safe (idempotent). Full prerequisites, one-time repo prep (age key, SOPS recipient, Postgres secret), and post-sync steps: see [docs/DEPLOY.md](docs/DEPLOY.md).
+| Component | Role |
+|-----------|------|
+| Temporal + PostgreSQL | Durable execution engine for all agent workflows |
+| Engine (worker, gateway, console) | The Agentic Ops application itself — agents run as k8s Jobs |
+| LiteLLM | One gateway for all model providers |
+| Alloy → Loki / Tempo / Prometheus, Grafana | Logs, traces, metrics, dashboards |
+| cert-manager + step-ca + Let's Encrypt | Internal CA for `*.lab` hosts, real certs for public ones |
+| Technitium | DNS for the internal zone |
+| MailPit | Catch-all SMTP for non-prod email |
 
 ## Layout
 
@@ -46,25 +48,31 @@ bootstrap/                  # everything before ArgoCD manages itself
   bootstrap.sh              # idempotent host bootstrap: k3s + ArgoCD + KSOPS
   cloud-init.yaml           # same bootstrap, embedded as VPS user-data
   root-app.yaml             # ArgoCD app-of-apps entrypoint
-clusters/
-  ops/                      # the shared agent-ops cluster
-    platform/               # one ArgoCD Application per component:
-                            #   temporal, postgres, litellm, lgtm (alloy/
-                            #   prometheus/loki/tempo/grafana), argocd,
-                            #   step-ca, technitium, mailpit, glitchtip
-    engine/                 # engine chart values + pinned image tags (tags bumped
-                            #   automatically by agentops-engine CI on merge)
-    products/               # product registry: one Application per product →
-                            #   points at the product repo's /deploy path;
-                            #   namespace, quotas, DNS subzone
-  prod-<product>/           # production destination clusters (prod stays
-                            #   out of the ops cluster — ARCHITECTURE.md §5.7)
-secrets/                    # SOPS-encrypted only
-  model-tokens/             # CLAUDE_CODE_OAUTH_TOKEN, CURSOR_API_KEY, z.ai, codex
-  forge/  litellm/  smtp/
+clusters/ops/
+  platform/                 # one ArgoCD Application per component (table above)
+  engine/                   # engine chart values + image tags, auto-bumped
+                            #   by agentops-engine CI on every merge
+  engine-secrets/           # SOPS-decrypted secrets for the engine
+  project-workers/          # ApplicationSet: one worker per managed project,
+                            #   spec read from each project's agents.json
+  products/                 # registry of product deployments (empty for now)
+secrets/                    # SOPS/age-encrypted only — never plaintext
 .sops.yaml                  # age recipients + enforced path rules
 ```
 
+## Deploy your own
+
+A fresh Ubuntu 22.04/24.04 or Debian 12+ host with ≥4 GB RAM and ≥40 GB disk is enough. Fork this repo, generate your own age key, replace the SOPS recipient and secrets with yours, and follow the runbook in **[docs/DEPLOY.md](docs/DEPLOY.md)** — it goes from empty host to working platform, phase by phase.
+
+Design decisions behind the bootstrap (why a shell script and not Ansible, why ArgoCD/SOPS/step-ca/Technitium) are in [docs/BOOTSTRAP.md](docs/BOOTSTRAP.md).
+
+## Ground rules
+
+- **Config is the state.** If it's not in this repo, it doesn't exist in the cluster. Manual `kubectl apply` is a bug — fix by PR.
+- **Rollback = `git revert`.** This repo's history is the deployment history; keep commits single-purpose.
+- **Secrets are SOPS/age-encrypted, always.** `.sops.yaml` defines which paths must be encrypted; the age private key exists only in the ArgoCD namespace and offline backups.
+- **Agents change infra by PR** like everyone else; ArgoCD is the only thing that touches the cluster.
+
 ## Status
 
-Milestone **M2** (see `agentops-engine/docs/MILESTONES.md`): bootstrap (`bootstrap.sh`/`cloud-init.yaml`) and all platform components (cert-manager, step-ca, Technitium, Postgres, Temporal) are implemented and merged to `main`. Engine deployment (`clusters/ops/engine/`) is wired but not yet exercised on a real host — see [docs/DEPLOY.md](docs/DEPLOY.md) Phase 6 for current blockers. The M2 gate: a wiped host rebuilds to a working platform from these two repos, following docs/BOOTSTRAP.md with no improvisation — not yet run for real.
+This is a personal lab that runs for real — one node, one operator, evolving quickly. Docs describe the intended happy path and occasionally lag behind the manifests; when in doubt, the manifests win. Design docs and implementation plans written along the way are kept in [docs/superpowers/](docs/superpowers/) as a historical record.
