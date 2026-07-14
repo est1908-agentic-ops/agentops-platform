@@ -38,6 +38,16 @@ spec:
               namespace: dev-agents
             otel:
               endpoint: http://alloy.platform.svc.cluster.local:4317
+          # externalSecretRefs arrives from the gateway as a JSON-encoded string
+          # array (ArgoCD plugin params are string-valued), so it can't live in
+          # valuesObject — inlining it here works because JSON is valid YAML.
+          # The `if` guards a gateway that predates the param (missing key
+          # would otherwise render the literal string "<no value>" and break
+          # the chart's list-typed value); chart default [] applies then.
+          values: |
+            {{- if .externalSecretRefs }}
+            externalSecretRefs: {{ .externalSecretRefs }}
+            {{- end }}
       destination:
         server: https://kubernetes.default.svc
         namespace: dev-agents
