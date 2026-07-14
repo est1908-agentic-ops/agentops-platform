@@ -13,8 +13,8 @@ Every ArgoCD `Application` (and the `root` app) must reference this repo as:
 repoURL: https://github.com/est1908-agentic-ops/agentops-platform.git
 ```
 
-- The repo is **private**. ArgoCD authenticates over HTTPS with a token-based
-  repository credential (`repo-est1908-agentops` secret — `username`/`password`,
+- ArgoCD reads this repo over HTTPS. A token-based repository credential is
+  registered for it (`repo-est1908-agentops` secret — `username`/`password`,
   password is a PAT). There is **no SSH deploy key credential** registered for this
   repo in ArgoCD.
 - Using `git@github.com:est1908-agentic-ops/agentops-platform.git` makes ArgoCD fail

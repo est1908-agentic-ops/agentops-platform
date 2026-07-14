@@ -1,29 +1,21 @@
-# Real cluster deploy — est1908-agentic-ops/agentops-platform
+# Deploy runbook — fresh host to working platform
 
-Copy-paste runbook for standing up the ops cluster on a **fresh Ubuntu/Debian LTS host** (VPS or bare metal). Assumes a single-node k3s cluster managed by ArgoCD watching this repo.
+Copy-paste runbook for standing up the ops cluster on a **fresh Ubuntu/Debian LTS host** (VPS or bare metal). Single-node k3s, managed by ArgoCD watching this repo on `main`.
 
-**Repo:** [github.com/est1908-agentic-ops/agentops-platform](https://github.com/est1908-agentic-ops/agentops-platform)  
-**Git URL (ArgoCD):** `https://github.com/est1908-agentic-ops/agentops-platform.git` (token-based HTTPS credential — see Phase 4)  
-**Branch:** `main`
-
-For design rationale and decisions, see [BOOTSTRAP.md](BOOTSTRAP.md). This doc is the operator checklist only.
+For the design rationale behind these steps, see [BOOTSTRAP.md](BOOTSTRAP.md). This doc is the operator checklist only.
 
 ---
 
 ## What you end up with
 
-After this runbook:
-
 - k3s (Traefik bundled) + ArgoCD with KSOPS-decrypted SOPS secrets
-- Platform components: cert-manager, step-ca, Technitium DNS, Postgres, Temporal, `dev-agents` namespace
+- Platform components: cert-manager, step-ca, Let's Encrypt issuer, Technitium DNS, Postgres, Temporal, the `dev-agents` namespace
 - Observability: Prometheus, Loki, Tempo, Alloy, Grafana, MailPit (Phase 7)
 - LiteLLM gateway (Phase 8)
 - `agentops_engine` database + postgres-exporter for size monitoring (Phase 9)
-- Internal hostnames, e.g.: `temporal.lab`, `grafana.lab`, `mail.lab`, `litellm.lab` (Ingress + step-ca certs)
+- Internal hostnames, e.g. `temporal.lab`, `grafana.lab`, `mail.lab`, `litellm.lab` (Ingress + step-ca certs)
 
 Everything after bootstrap is GitOps — no further `kubectl apply` for platform components.
-
----
 
 ## Prerequisites
 
@@ -31,79 +23,25 @@ Everything after bootstrap is GitOps — no further `kubectl apply` for platform
 |-------------|--------|
 | Host | Ubuntu 22.04/24.04 or Debian 12+, root/sudo, ≥4 GB RAM, ≥40 GB disk |
 | Network | Inbound 80/443 if exposing Ingress; UDP/TCP 53 if Technitium serves DNS externally |
-| Workstation | macOS or Linux — see [Workstation setup (macOS)](#workstation-setup-macos) for tools |
-| GitHub access | ArgoCD must read `est1908-agentic-ops/agentops-platform` — for a **private** repo, configure a repo credential in ArgoCD (see [Private repo access](#private-repo-access)) |
+| Workstation | Tools below, for generating secrets and editing the repo |
+| Repo access | ArgoCD must be able to read this repo — a public repo needs nothing; a **private fork** needs a repo credential (Phase 4) |
 
----
-
-## Workstation setup (macOS)
-
-Do this on your Mac **before** Phase 0. The cluster host is Linux; your Mac is only for generating secrets, editing the repo, and (optionally) talking to the cluster over SSH/`kubectl`.
-
-### Install Homebrew (if needed)
+### Workstation tools
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+brew install age sops git                          # required
+brew install gh kubectl kustomize helm jq          # useful: cluster access, local render checks
 ```
 
-Follow the post-install instructions to add `brew` to your `PATH` (Apple Silicon Macs often need the `/opt/homebrew/bin` line in `~/.zprofile`).
+(`jq` is required by `scripts/configure-technitium-dns.sh`; `openssl` ships with macOS.)
 
-### Install required tools
+Once you have an age key (Phase 0.1), point SOPS at it for every encrypt/decrypt command — add to `~/.zshrc` if you use it often:
 
 ```bash
-brew install age sops git
+export SOPS_AGE_KEY_FILE="$HOME/.agentops/age.key"
 ```
 
-| Tool | Purpose |
-|------|---------|
-| `age` | Provides `age-keygen` and decryption; SOPS uses age under the hood |
-| `sops` | Encrypt/decrypt files under `secrets/` |
-| `git` | Clone, commit, and push to `est1908-agentic-ops/agentops-platform` |
-
-`openssl` is already on macOS (used to generate the Postgres password).
-
-### Optional but useful
-
-```bash
-brew install gh kubectl kustomize helm jq
-```
-
-| Tool | Purpose |
-|------|---------|
-| `gh` | GitHub CLI — auth, PRs, checking repo access |
-| `kubectl` | Inspect the remote cluster after bootstrap (copy kubeconfig from the host) |
-| `kustomize` / `helm` | Local render checks (`kustomize build --enable-helm clusters/ops/platform/...`) |
-| `jq` | Required by `scripts/configure-technitium-dns.sh` to parse API responses |
-
-### Authenticate with GitHub
-
-```bash
-gh auth login
-gh repo view est1908-agentic-ops/agentops-platform
-```
-
-If the repo is private, ensure your account has read access before pushing secrets.
-
-### Clone the repo
-
-```bash
-git clone git@github-est1908:est1908-agentic-ops/agentops-platform.git ~/agentops-platform
-cd agentops-platform
-```
-
-### Point SOPS at your age key (after Phase 0.1)
-
-Once you have `age.key`, tell SOPS where it lives for every encrypt/decrypt command:
-
-```bash
-export SOPS_AGE_KEY_FILE="$PWD/age.key"    # if age.key is in the repo checkout dir
-# or
-export SOPS_AGE_KEY_FILE="$HOME/.agentops/age.key"   # if stored outside the repo
-```
-
-Add the `export` line to `~/.zshrc` if you will run `sops` often.
-
-**Keep `age.key` out of git** — it should live beside or outside the checkout, never under a tracked path. The repo `.gitignore` blocks `*.agekey` but not `age.key`; be deliberate about location.
+**Keep `age.key` out of git** — store it beside or outside the checkout, never under a tracked path.
 
 ---
 
@@ -113,8 +51,6 @@ Do this **before** touching the host. Order matters for the age key.
 
 ### 0.1 Generate the platform age keypair
 
-From your Mac (repo checkout or any directory — **not** inside a path you will commit):
-
 ```bash
 age-keygen -o age.key
 chmod 600 age.key
@@ -122,22 +58,15 @@ chmod 600 age.key
 
 The output includes a public key line like `# public key: age1abc...`.
 
-**Back up `age.key` offline now** (password manager, encrypted USB, etc.). If you lose it, every SOPS secret in this repo is unrecoverable.
-
-Never commit `age.key`.
+**Back up `age.key` offline now** (password manager, encrypted USB). If you lose it, every SOPS secret in this repo is unrecoverable. Never commit it.
 
 ### 0.2 Set the SOPS recipient in this repo
 
-Replace the placeholder in `.sops.yaml` with your real public key.
-
-**macOS** (`sed -i` requires a backup extension):
+Put your public key into `.sops.yaml` (macOS `sed` needs the backup extension):
 
 ```bash
-cd agentops-platform   # your clone
-
 PUBKEY="$(grep '^# public key:' ../age.key | awk '{print $4}')"   # adjust path to age.key
-sed -i.bak "s/age1PLACEHOLDER_REPLACE_DURING_M2/${PUBKEY}/" .sops.yaml
-rm -f .sops.yaml.bak
+sed -i.bak "s/age1[a-z0-9]*/${PUBKEY}/" .sops.yaml && rm -f .sops.yaml.bak
 git add .sops.yaml
 git commit -m "chore: set platform age recipient"
 git push origin main
@@ -148,9 +77,7 @@ git push origin main
 ArgoCD cannot sync the `postgres` Application until this file exists.
 
 ```bash
-cd agentops-platform
-
-export SOPS_AGE_KEY_FILE=/path/to/age.key   # e.g. $HOME/.agentops/age.key
+export SOPS_AGE_KEY_FILE=/path/to/age.key
 
 PASSWORD="$(openssl rand -base64 32)"
 cat > secrets/postgres/postgres-credentials.enc.yaml <<EOF
@@ -173,13 +100,13 @@ Store the password somewhere safe if you need manual `psql` access later.
 
 ### 0.4 Confirm manifests are on `main`
 
-All ArgoCD Applications and `bootstrap/root-app.yaml` should reference:
+All ArgoCD Applications and `bootstrap/root-app.yaml` must reference your repo over HTTPS:
 
 ```yaml
 repoURL: https://github.com/est1908-agentic-ops/agentops-platform.git
 ```
 
-Push any local changes (age recipient, postgres secret, bootstrap manifests) to `main` before bootstrapping the host.
+Push everything (age recipient, postgres secret) to `main` before bootstrapping the host.
 
 ---
 
@@ -189,29 +116,21 @@ Choose **A** (manual script) or **B** (cloud-init). Do not run both on the same 
 
 ### A. Manual bootstrap (existing VM or SSH session)
 
-`agentops-platform` is a **private** repo, so the host needs its own read-only credential to clone it. A deploy key is the right tool here — scoped to exactly this repo, read-only, no dependency on any person's GitHub account (same reasoning as `agentops-engine`'s `bump-platform` CI, which uses one for write access; this one only needs read).
-
-**Generate and register the deploy key** (once, from your workstation):
+Clone the repo on the host. A public repo clones anonymously; a **private fork** needs a read-only [deploy key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/managing-deploy-keys) — generate one (`ssh-keygen -t ed25519 -f agentops-platform-deploy-key -N ""`), add the public half under repo Settings → Deploy keys (write access unchecked), then clone with:
 
 ```bash
-ssh-keygen -t ed25519 -f agentops-platform-deploy-key -N ""
+# public repo:
+git clone https://github.com/est1908-agentic-ops/agentops-platform.git ~/agentops-platform
+
+# private fork:
+GIT_SSH_COMMAND="ssh -i ~/.ssh/agentops-platform-deploy-key -o IdentitiesOnly=yes" \
+  git clone git@github.com:<your-org>/agentops-platform.git ~/agentops-platform
 ```
 
-Add the **public** key (`agentops-platform-deploy-key.pub`) at `est1908-agentic-ops/agentops-platform` → Settings → Deploy keys → Add deploy key. Leave "Allow write access" **unchecked** — the host only reads.
-
-**On the host:**
+Copy your `age.key` to the host securely (scp — never commit it), then:
 
 ```bash
-# Copy agentops-platform-deploy-key (private half) and age.key to the host
-# securely (scp, etc.) — never commit either
-mkdir -p ~/.ssh && chmod 700 ~/.ssh
-# (after copying the private key to ~/.ssh/agentops-platform-deploy-key)
-chmod 600 ~/.ssh/agentops-platform-deploy-key
-
-GIT_SSH_COMMAND="ssh -i ~/.ssh/agentops-platform-deploy-key -o IdentitiesOnly=yes" \
-  git clone git@github.com:est1908-agentic-ops/agentops-platform.git ~/agentops-platform
 cd ~/agentops-platform
-
 sudo ./bootstrap/bootstrap.sh --age-key-file /path/to/age.key
 ```
 
@@ -225,13 +144,11 @@ Re-running the same command is safe (idempotent).
 
 ### B. Cloud-init (fresh VPS)
 
-1. On your workstation, edit `bootstrap/cloud-init.yaml`:
-   - Replace the `age.key` `content:` block with your real private key (lines starting with `AGE-SECRET-KEY-`).
-   - Confirm embedded `repoURL` is `https://github.com/est1908-agentic-ops/agentops-platform.git`.
+1. On your workstation, edit `bootstrap/cloud-init.yaml`: replace the `age.key` `content:` block with your real private key (lines starting with `AGE-SECRET-KEY-`), and confirm the embedded `repoURL` points at your repo.
 2. Paste the **entire file** into the provider's user-data / cloud-init field at VM creation.
 3. Wait for first boot (~5–15 min depending on network).
 
-**Never commit a real age private key to git** — only paste it into the provider's user-data at VM creation time.
+**Never commit a real age private key** — only paste it into the provider's user-data at VM creation time.
 
 ---
 
@@ -250,8 +167,8 @@ Expect:
 
 - ArgoCD pods `Running`
 - Application `root` present and moving toward `Synced` / `Healthy`
-- Child Applications appearing: `cert-manager`, `step-ca`, `technitium`, `postgres`, `temporal`, `namespaces`, `prometheus`, `loki`, `tempo`, `alloy`, `grafana`, `mailpit`, `litellm`, `postgres-exporter`
-- `grafana` stays `Degraded`/`Unknown` until its encrypted credentials exist — see [Phase 7](#phase-7--deploy-the-observability-stack), same dependency shape as `postgres` above
+- Child Applications appearing: `cert-manager`, `step-ca`, `letsencrypt`, `technitium`, `postgres`, `temporal`, `namespaces`, `prometheus`, `loki`, `tempo`, `alloy`, `grafana`, `mailpit`, `litellm`, `postgres-exporter`
+- `grafana` stays `Degraded`/`Unknown` until its encrypted credentials exist — see [Phase 7](#phase-7--deploy-the-observability-stack); same dependency shape as `postgres`
 
 Watch until stable:
 
@@ -259,51 +176,33 @@ Watch until stable:
 kubectl get applications -n argocd -w
 ```
 
-### Typical sync order
+Typical sync order: `cert-manager` (CRDs) → `step-ca`/`letsencrypt` (need the CRDs) → everything else in parallel.
 
-1. `cert-manager` — installs CRDs
-2. `step-ca` — needs cert-manager CRDs for `ClusterIssuer`
-3. `technitium`, `postgres`, `temporal`, `namespaces` — can proceed in parallel once deps are met
-
-If `postgres` stays `Degraded` or `Unknown`, check that `secrets/postgres/postgres-credentials.enc.yaml` is on `main` and the age key in the `sops-age` secret matches the key that encrypted it:
+If `postgres` stays `Degraded`/`Unknown`, check that `secrets/postgres/postgres-credentials.enc.yaml` is on `main` and the age key in the `sops-age` secret matches the key that encrypted it:
 
 ```bash
 kubectl -n argocd get secret sops-age -o yaml
 kubectl -n argocd logs deploy/argocd-repo-server --tail=50
 ```
 
-If the error instead says `unable to find plugin root` — see [Troubleshooting → postgres stuck on Unknown](#postgres-stuck-on-unknown--ksops-plugin-not-found).
+If the error says `unable to find plugin root` instead — see [Troubleshooting](#postgres-stuck-on-unknown--ksops-plugin-not-found).
 
 ---
 
 ## Phase 3 — Post-sync manual steps
 
-These are intentional one-time operator actions not automated in GitOps yet.
+Intentional one-time operator actions not automated in GitOps.
 
-### 3.1 Temporal visibility database (now automatic)
+### 3.1 Temporal databases (automatic — verify only)
 
-Temporal needs two databases: `temporal` and `temporal_visibility`. Both are
-created automatically at first boot of the Postgres StatefulSet — `temporal`
-from `POSTGRES_DB`, and `temporal_visibility` from the initdb script in
-`clusters/ops/platform/postgres/initdb-configmap.yaml`. No manual step is
-required on a clean bootstrap.
-
-> Historical note: this used to be a manual `CREATE DATABASE temporal_visibility`
-> because the old Bitnami chart only created the one database. The Postgres
-> component is now a plain StatefulSet on the official image (see the
-> `kustomization.yaml` comment for why Bitnami was dropped), and its initdb
-> script handles the second database.
-
-If Temporal schema Jobs failed *before* Postgres was healthy (e.g. the
-`postgres-credentials` secret didn't exist yet), delete them and let ArgoCD
-re-sync once Postgres is up:
+Temporal's two databases (`temporal`, `temporal_visibility`) are created automatically at first boot of the Postgres StatefulSet (`POSTGRES_DB` + the initdb script in `clusters/ops/platform/postgres/initdb-configmap.yaml`). If Temporal schema Jobs failed *before* Postgres was healthy, delete them and let ArgoCD re-sync:
 
 ```bash
 kubectl delete jobs -n platform -l app.kubernetes.io/instance=temporal
 kubectl get jobs -n platform   # confirm they re-run and complete
 ```
 
-To verify both databases exist:
+Verify both databases exist:
 
 ```bash
 kubectl exec -n platform postgres-postgresql-0 -- \
@@ -312,11 +211,9 @@ kubectl exec -n platform postgres-postgresql-0 -- \
 
 ### 3.2 Configure Technitium DNS
 
-Technitium needs a one-time zone (`lab`) plus an A record for `temporal.lab`. Use the script below (quick path) — it talks to Technitium's own [REST API](https://github.com/TechnitiumSoftware/DnsServer/blob/master/APIDOCS.md) and is safe to re-run. The manual web UI steps underneath remain as a fallback for when the API isn't reachable/authenticated yet (e.g. before Technitium's initial setup has run, or to troubleshoot).
+Technitium needs a one-time zone (`lab`) plus an A record for `temporal.lab`. The script talks to Technitium's [REST API](https://github.com/TechnitiumSoftware/DnsServer/blob/master/APIDOCS.md) and is safe to re-run.
 
-#### Quick path: `scripts/configure-technitium-dns.sh`
-
-1. Port-forward to Technitium's web UI/API (leave this running in a separate terminal):
+1. Port-forward to Technitium (leave running in a separate terminal):
 
    ```bash
    kubectl port-forward -n technitium svc/technitium 5380:5380
@@ -328,103 +225,69 @@ Technitium needs a one-time zone (`lab`) plus an A record for `temporal.lab`. Us
    kubectl get svc -n kube-system traefik
    ```
 
-3. Run the script. On first use, authenticate with the admin account (Technitium ships with `admin`/`admin` — change this password after first login) and pass `--print-token` to mint a reusable API token:
+3. Run the script. On first use, authenticate with the admin account (Technitium ships with `admin`/`admin` — change that password after first login) and pass `--print-token` to mint a reusable API token:
 
    ```bash
    TECHNITIUM_USER=admin TECHNITIUM_PASSWORD='<admin-password>' \
      ./scripts/configure-technitium-dns.sh --target-ip <traefik-ip> --print-token
    ```
 
-   Save the printed token (e.g. in your password manager) and use it for subsequent runs instead of the admin password:
+   Save the printed token and use it for subsequent runs:
 
    ```bash
-   TECHNITIUM_TOKEN='<token-from-above>' \
+   TECHNITIUM_TOKEN='<token>' \
      ./scripts/configure-technitium-dns.sh --target-ip <traefik-ip>
    ```
 
-   The script creates the `lab` zone only if it doesn't already exist, and creates/updates the `temporal.lab` A record only if it doesn't already point at `--target-ip` — re-running it is a no-op once DNS is already correct. Run `./scripts/configure-technitium-dns.sh --help` for all options (`--zone`, `--record`, `--ttl`, `--url`).
+   Re-running is a no-op once DNS is correct. `--help` lists all options (`--zone`, `--record`, `--ttl`, `--url`).
 
 4. Point your workstation or lab router DNS at Technitium for `*.lab` (or use Technitium as upstream forwarder).
 
-#### Manual fallback (web UI)
+Manual fallback: open `http://localhost:5380` (same port-forward), complete initial setup, create the `lab` zone, and add an A record for `temporal.lab` pointing at Traefik's IP.
 
-Use this if the script can't reach Technitium's API, credentials/token aren't set up yet, or you want to inspect the zone visually:
-
-1. Port-forward or reach Technitium web UI (port 5380):
-
-   ```bash
-   kubectl port-forward -n technitium svc/technitium 5380:5380
-   ```
-
-   Open `http://localhost:5380` and complete initial setup.
-
-2. Create a zone for your internal TLD (default in configs: **`lab`**).
-3. Add an A/AAAA or CNAME record for `temporal.lab` pointing at Traefik's external IP or the node IP:
-
-   ```bash
-   kubectl get svc -n kube-system traefik
-   ```
-
-4. Point your workstation or lab router DNS at Technitium for `*.lab` (or use Technitium as upstream forwarder).
-
-### 3.3 Trust step-ca root on admin machines
+### 3.3 Trust the step-ca root on admin machines
 
 Export the root CA and install it in your OS/browser trust store:
 
 ```bash
-# Exact secret name may vary — list first:
-kubectl get secrets -n step-ca
-
-kubectl get secret -n step-ca step-certificates-ca-password \
-  -o jsonpath='{.data}'   # inspect; or use step CLI inside the pod
+kubectl get secrets -n step-ca            # find the CA secret name
 ```
 
-Follow [smallstep documentation](https://smallstep.com/docs/) for your platform, or copy the root from the step-ca pod/config. Without this, `https://temporal.lab` will show a certificate warning even when cert-manager issued the cert correctly.
+Follow the [smallstep docs](https://smallstep.com/docs/) for your platform. Without this, `https://temporal.lab` shows a certificate warning even when cert-manager issued the cert correctly.
 
-### 3.4 Confirm Temporal UI
+### 3.4 Confirm the Temporal UI
 
-After DNS and CA trust:
-
-```bash
-curl -I https://temporal.lab
-```
-
-Or open `https://temporal.lab` in a browser — expect a valid cert from step-ca and the Temporal Web UI.
+After DNS and CA trust, open `https://temporal.lab` — expect a valid cert from step-ca and the Temporal Web UI.
 
 ---
 
-## Phase 4 — Private repo access
+## Phase 4 — Repo credential for ArgoCD (private forks only)
 
-`est1908-agentic-ops/agentops-platform` is **private**, so ArgoCD needs credentials before it can clone it — required before Phase 2's `root` Application can ever reach `Synced` (every `repoURL` in this repo, including `bootstrap/root-app.yaml`, is now the HTTPS form `https://github.com/est1908-agentic-ops/agentops-platform.git`). ArgoCD authenticates this over HTTPS with a personal access token (PAT), not the Phase 1A deploy key — that key is a separate, SSH-only credential scoped to the host's own `git clone`, unrelated to ArgoCD's repo-server credential.
+If ArgoCD can't read the repo, `root` sits at sync status `Unknown` with no child Applications — this is almost always why. A public repo needs no credential. For a **private fork**, register a token-based HTTPS credential (ArgoCD's repo-server uses this — it is separate from Phase 1A's deploy key, which only the host's own `git clone` uses):
 
-**Do this before or immediately after Phase 1** — if `root`'s sync status is stuck on `Unknown` with no child Applications appearing in Phase 2, this is almost always why.
-
-Generate a PAT with read access to this repo (fine-grained PAT scoped to just this repo, or a classic PAT with `repo` scope), then register it as an ArgoCD repository credential:
+Generate a PAT with read access to the repo (fine-grained, scoped to just this repo), then:
 
 ```bash
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
-kubectl -n argocd create secret generic repo-est1908-agentops \
+kubectl -n argocd create secret generic repo-agentops-platform \
   --from-literal=type=git \
-  --from-literal=url=https://github.com/est1908-agentic-ops/agentops-platform.git \
-  --from-literal=username=est1908 \
+  --from-literal=url=https://github.com/<your-org>/agentops-platform.git \
+  --from-literal=username=<your-user> \
   --from-literal=password=<PAT>
 
-kubectl -n argocd label secret repo-est1908-agentops \
+kubectl -n argocd label secret repo-agentops-platform \
   argocd.argoproj.io/secret-type=repository
-```
 
-Refresh the root app:
-
-```bash
+# refresh the root app
 kubectl -n argocd patch application root --type merge -p \
   '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}'
 kubectl get applications -n argocd -w
 ```
 
-Expect `root` to flip to `Synced` and the six child Applications (`cert-manager`, `step-ca`, `technitium`, `postgres`, `temporal`, `namespaces`) to appear.
+Expect `root` to flip to `Synced` and child Applications to appear.
 
-**Cloud-init path:** this secret still has to be created manually after first boot — `cloud-init.yaml` provisions the age key but not an ArgoCD repo credential, so `root` will sit on `Unknown` until you run the two commands above once, post-boot.
+**Cloud-init path:** `cloud-init.yaml` provisions the age key but not this credential — create it manually after first boot.
 
 ---
 
@@ -444,18 +307,9 @@ Expect `root` to flip to `Synced` and the six child Applications (`cert-manager`
 
 ## Phase 6 — Deploy the engine
 
-The `engine` Application (`clusters/ops/engine/`) deploys the Temporal worker + wires `runAgent` to launch `agent-runner` as a K8s Job in `dev-agents` (as of 2026-07-06, `agent-claude`/`agent-pi` were consolidated into this one image — see the `agentRunnerTag` comment in `values.yaml`). Its Helm chart is pulled as an **OCI artifact** from `oci://gitactions.est1908.top/agentic-ops/engine` (`chart: engine`) — not from `agentops-engine`'s git repo — so ArgoCD needs no git credential for `agentops-engine` at all, only the registry credential in 6.2.6.
+The `engine` Application (`clusters/ops/engine/`) deploys the Temporal worker, gateway, and console, and wires agent runs to launch as k8s Jobs in `dev-agents`. Its Helm chart is pulled as an **OCI artifact** from the self-hosted registry (`oci://gitactions.est1908.top/agentic-ops/engine`) — not from a git repo — and image tags in `values.yaml` are bumped automatically by `agentops-engine` CI on every merge to its `main`.
 
-**Do not sync this yet if the blocker below is unresolved** — the worker will come up but every real task will fail.
-
-### 6.0 Status (as of 2026-07-06)
-
-- ~~No auth secret wired for `agent-claude` Jobs~~ — **fixed**: `claudeAuthSecretName` chart value (default `claude-credentials`) + `CLAUDE_AUTH_SECRET_NAME` env var wire `authSecretName` into every `claude` `K8sJobRunner`/Job pod (`agentops-engine#4`).
-- Images and the **Helm chart itself** now come from a self-hosted registry (`gitactions.est1908.top/agentic-ops`), not GHCR and not git. `agentops-engine` CI packages `charts/engine` as an OCI artifact (version `0.0.0-<git-sha>`) alongside the `worker`/`agent-runner`/`gateway` images on every merge to `main`. Since it's basic-auth-gated: images need a K8s `imagePullSecrets` entry (6.2.5), and ArgoCD's own chart pull needs a separate Helm-type repository credential (6.2.6) — same underlying username/password, two different consumers.
-- ~~`bump-platform` CI job fails~~ — **fixed**: swapped `PLATFORM_REPO_TOKEN` (a PAT that never had real access) for a write-enabled deploy key scoped to `agentops-platform` (`agentops-engine#6`), and fixed a Python regex crash the auth failure had been masking (`agentops-engine#7`). Confirmed working end-to-end: `workerTag`/`agentRunnerTag`/chart `targetRevision` now auto-bump on every merge to `agentops-engine` main. 6.3 below is now just a sanity check, not a required manual step.
-- `agentClaudeTag` was renamed to `agentRunnerTag` (2026-07-06): `claude` and `pi` now share one image (`images/agent-claude/` no longer exists in `agentops-engine`). A `gatewayTag` field was also added — it has no historical bump yet, so it stays `CHANGEME` in `values.yaml` until the next `agentops-engine` CI run sets a real value.
-
-Also confirm before starting: you (or whoever ran the earlier `.sops.yaml`/postgres-secret setup) still has the **age private key** file backed up and accessible — it's required for Phase 1 and isn't recoverable from either repo.
+The registry is basic-auth-gated, so two credentials are involved: one for **kubelet** pulling images (6.3), one for **ArgoCD's repo-server** pulling the chart (6.4). Same underlying username/password, two different consumers.
 
 ### 6.1 Create the `github-token` Secret in `dev-agents`
 
@@ -469,16 +323,7 @@ kubectl -n dev-agents create secret generic github-token \
   --from-literal=GITHUB_TOKEN=ghp_YOUR_TOKEN
 ```
 
-(A PAT or GitHub App token with repo write access to whichever test repo you point the engine at — same one M1 used.)
-
-> The engine chart references `GITHUB_TOKEN` as a **required** env var (a
-> non-optional `secretKeyRef`), so the Secret must exist or the worker pod stays
-> in `CreateContainerConfigError`. The value is only *used* when an agent opens a
-> PR at the end of a task. If you only need to bring the platform up / run the M2
-> gate and don't need PR-opening yet, a placeholder value is fine:
-> `--from-literal=GITHUB_TOKEN=placeholder-unused`. Making the token genuinely
-> optional (it arguably belongs to a future component, not the engine) is an
-> `agentops-engine` chart change.
+Use a PAT with repo write access to whichever repo you point the engine at. The chart references `GITHUB_TOKEN` as a required env var, so the Secret must exist or the worker pod stays in `CreateContainerConfigError` — if you don't need PR-opening yet, a placeholder value is fine (`--from-literal=GITHUB_TOKEN=placeholder-unused`).
 
 ### 6.2 Create the Claude auth Secret
 
@@ -489,9 +334,9 @@ kubectl -n dev-agents create secret generic claude-credentials \
   --from-literal=CLAUDE_CODE_OAUTH_TOKEN="$(claude setup-token)"
 ```
 
-### 6.2.5 Create the registry pull Secret
+### 6.3 Create the registry pull Secret
 
-Images are pulled from `gitactions.est1908.top` (basic auth). Secret name matches the chart's `imagePullSecretName` value (default `registry-credentials`) — needed by both the worker Deployment and every `agent-runner` Job pod:
+Secret name matches the chart's `imagePullSecretName` value (default `registry-credentials`) — needed by the worker Deployment and every `agent-runner` Job pod:
 
 ```bash
 kubectl -n dev-agents create secret docker-registry registry-credentials \
@@ -500,9 +345,7 @@ kubectl -n dev-agents create secret docker-registry registry-credentials \
   --docker-password=YOUR_PASSWORD
 ```
 
-### 6.2.6 Register the ArgoCD OCI chart credential
-
-Different from 6.2.5 above — that Secret is for **kubelet** pulling container images; this one is for **ArgoCD's repo-server** pulling the `engine` Helm chart itself, which is also published to `gitactions.est1908.top` (as an OCI artifact, `agentops-engine` CI pushes it alongside the images). Same underlying credentials, different consumer:
+### 6.4 Register the ArgoCD OCI chart credential
 
 ```bash
 kubectl -n argocd create secret generic repo-gitactions-registry \
@@ -514,66 +357,53 @@ kubectl -n argocd create secret generic repo-gitactions-registry \
   --from-literal=password=YOUR_PASSWORD
 
 # repo-creds (a credential *template*), NOT repository: it matches every repoURL
-# under the oci://gitactions.est1908.top prefix by prefix, so it keeps working when
-# CI bumps the chart tag/path. The url MUST carry the oci:// scheme — ArgoCD matches
-# repo credentials against the Application's repoURL by string, and the engine source
-# repoURL is oci://… ; a scheme-less url silently fails to match ("basic credential
-# not found" in the repo-server logs).
+# under the oci://gitactions.est1908.top prefix, so it keeps working when CI
+# bumps the chart tag/path. The url MUST carry the oci:// scheme — ArgoCD
+# matches credentials against the Application's repoURL by string; a
+# scheme-less url silently fails to match ("basic credential not found" in the
+# repo-server logs).
 kubectl -n argocd label secret repo-gitactions-registry \
   argocd.argoproj.io/secret-type=repo-creds
 ```
 
-Without this, the `engine` Application's chart source (`oci://gitactions.est1908.top/agentic-ops/engine`, `chart: engine`) can't be pulled — same failure shape as Phase 4's missing git credential (stuck, no error obvious until you check `argocd-repo-server` logs).
+Without this, the `engine` chart can't be pulled — same failure shape as Phase 4 (stuck, no obvious error until you check `argocd-repo-server` logs).
 
-### 6.3 Confirm real image tags and chart version (sanity check — auto-bump should already have set these)
+### 6.5 Sanity-check image tags
+
+CI auto-bump should already have set real values:
 
 ```bash
 grep -n "CHANGEME" clusters/ops/engine/values.yaml clusters/ops/engine/application.yaml
 ```
 
-If anything prints, manually set `workerTag`/`agentRunnerTag`/`gatewayTag` in `values.yaml` to a real git SHA from `agentops-engine`'s `main` (confirm the matching images exist: `gitactions.est1908.top/agentic-ops/{worker,agent-runner,gateway}:<sha>`), and `application.yaml`'s chart `targetRevision` to `"0.0.0-<same sha>"` (confirm that chart version was actually pushed — `agentops-engine`'s `build-images` job pushes it on every merge to `main`), commit, push. `gatewayTag` is expected to print `CHANGEME` until the next CI bump lands (see 6.0) — everything else should not.
+If anything prints, set the offending tag in `values.yaml` to a real git SHA from `agentops-engine`'s `main` (confirm the matching image exists in the registry), and `application.yaml`'s chart `targetRevision` to `"0.0.0-<same sha>"`, commit, push.
 
-### 6.4 Watch it sync
+### 6.6 Watch it sync and smoke-test
 
 ```bash
 kubectl get applications -n argocd -w
-```
-
-Expect `engine` to reach `Synced`/`Healthy` after `cert-manager`/`step-ca`/`technitium`/`postgres`/`temporal`/`namespaces` are already up (it needs `temporal-frontend.platform.svc.cluster.local:7233` reachable).
-
-```bash
 kubectl get pods -n dev-agents
 kubectl logs -n dev-agents deploy/engine-worker -f
 ```
 
-### 6.5 Smoke test — the actual M2 gate
-
-From your workstation, with `kubectl port-forward` to Temporal's frontend (M2 has no external gRPC exposure by design — see `agentops-engine`'s M2 wiring doc):
+`engine` reaches `Synced`/`Healthy` once the platform components are up (it needs `temporal-frontend.platform.svc.cluster.local:7233` reachable). Then run a real task end-to-end — from your workstation, port-forward Temporal's frontend and start a run against a test repo:
 
 ```bash
 kubectl port-forward -n platform svc/temporal-frontend 7233:7233 &
-```
-
-Then run the engine CLI against the same test repo M1 used:
-
-```bash
 TEMPORAL_ADDRESS=localhost:7233 engine start --issue <N>
 ```
 
-Expect: a real merge-ready PR, with the `claude` invocation for each stage showing up in `kubectl get pods -n dev-agents` as a Job pod (not a process on the worker itself). This — not just "Applications are Healthy" — is what actually proves the M2 gate (`ARCHITECTURE.md` §8.1: "M1's scenario runs entirely in-cluster").
+Expect a real merge-ready PR, with each agent stage showing up in `kubectl get pods -n dev-agents` as a Job pod. That — not just "Applications are Healthy" — is what proves the platform works.
 
 ---
 
 ## Phase 7 — Deploy the observability stack
 
-`prometheus`, `loki`, `tempo`, `alloy` sync automatically at Phase 2 with no manual step — none of them need a pre-existing secret. `grafana` needs its admin credentials encrypted first, same dependency shape Postgres has. `mailpit` needs nothing at all; it's already up as soon as `root` syncs.
-
-Design doc: [`docs/superpowers/specs/2026-07-07-observability-stack-design.md`](superpowers/specs/2026-07-07-observability-stack-design.md).
+`prometheus`, `loki`, `tempo`, `alloy`, and `mailpit` sync automatically at Phase 2 with no manual step. `grafana` needs its admin credentials encrypted first — same dependency shape as Postgres. Design doc: [observability stack](superpowers/specs/2026-07-07-observability-stack-design.md).
 
 ### 7.1 Create and encrypt Grafana credentials
 
 ```bash
-cd agentops-platform
 export SOPS_AGE_KEY_FILE=/path/to/age.key
 
 PASSWORD="$(openssl rand -base64 24)"
@@ -594,7 +424,7 @@ git commit -m "chore: add encrypted grafana credentials"
 git push origin main
 ```
 
-Store the password somewhere safe — it's the only way into `https://grafana.lab` until you set up OIDC (ARCHITECTURE.md §5.10 defers that past v0).
+Store the password somewhere safe — it's the only way into `https://grafana.lab`.
 
 ### 7.2 Confirm the stack is healthy
 
@@ -602,48 +432,38 @@ Store the password somewhere safe — it's the only way into `https://grafana.la
 kubectl get applications -n argocd | grep -E 'prometheus|loki|tempo|alloy|grafana|mailpit'
 ```
 
-All six should reach `Synced`/`Healthy` (`grafana` only after 7.1). Then, same DNS step as Technitium's `temporal.lab` record (Phase 3.2), add A records for `grafana.lab` and `mail.lab` pointed at Traefik's IP.
+All six should reach `Synced`/`Healthy` (`grafana` only after 7.1). Add Technitium A records for `grafana.lab` and `mail.lab` (same as Phase 3.2), then:
 
 ```bash
 curl -I https://grafana.lab   # expect Grafana's login page
 curl -I https://mail.lab      # expect MailPit's web UI
 ```
 
-Open `https://grafana.lab`, log in with the credentials from 7.1, and confirm **Prometheus**, **Loki**, and **Tempo** all show up under Connections → Data sources with no error — this is the concrete precondition `agentops-engine`'s OTel instrumentation (M4 sub-project 2) and its dashboards (sub-project 4) are built against.
+Log in to Grafana and confirm **Prometheus**, **Loki**, and **Tempo** all appear under Connections → Data sources with no error.
 
-### 7.3 OTLP endpoint for `agentops-engine`
-
-`agentops-engine`'s worker/agent-runner OTel instrumentation exports to:
-
-```
-alloy.platform.svc.cluster.local:4317   # OTLP/gRPC, in-cluster only
-```
-
-No further platform-side change is needed for that sub-project to start emitting traces — Alloy already routes anything arriving there to Tempo, and tails every pod's container logs to Loki regardless of what emits them. `clusters/ops/engine/values.yaml`'s `otelExporterOtlpEndpoint` is already set to this value — inert until `agentops-engine`'s CI bump lands a chart version that recognizes the key, harmless either way.
+The in-cluster OTLP endpoint the engine exports to is `alloy.platform.svc.cluster.local:4317` (OTLP/gRPC) — Alloy routes traces to Tempo and tails every pod's logs to Loki with no further config.
 
 ---
 
 ## Phase 8 — Deploy LiteLLM
 
-`litellm-credentials` and `litellm-db-credentials` are already real (generated and encrypted when this component was built) — no manual step needed for either. `litellm-provider-keys` ships with a deliberately-invalid `ZAI_API_KEY: CHANGEME` placeholder; the proxy comes up and syncs `Healthy` either way, but any call routed to the `zai-glm-4.6` model fails auth against z.ai until this is filled in.
+`litellm-credentials` and `litellm-db-credentials` ship encrypted in this repo. `litellm-provider-keys` may contain `CHANGEME` placeholders for provider keys — the proxy syncs `Healthy` either way, but calls routed to that provider fail auth until the real key is set. Design doc: [litellm deploy](superpowers/specs/2026-07-07-litellm-deploy-design.md).
 
-Design doc: [`docs/superpowers/specs/2026-07-07-litellm-deploy-design.md`](superpowers/specs/2026-07-07-litellm-deploy-design.md).
-
-### 8.1 Set the real z.ai API key
+### 8.1 Set real provider API keys
 
 ```bash
-cd agentops-platform
 export SOPS_AGE_KEY_FILE=/path/to/age.key
 
 sops secrets/litellm/litellm-provider-keys.enc.yaml
 # replace CHANGEME with the real key, save and exit — sops re-encrypts in place
 
 git add secrets/litellm/litellm-provider-keys.enc.yaml
-git commit -m "chore: set the real z.ai API key for litellm"
+git commit -m "chore: set litellm provider keys"
 git push origin main
 ```
 
-The proxy Deployment needs a restart to pick up the new secret value (`environmentSecrets` env vars aren't live-reloaded) — `kubectl rollout restart deployment/litellm -n platform`, or just wait for the next unrelated sync to touch the pod.
+The proxy Deployment needs a restart to pick up new secret values:
+`kubectl rollout restart deployment/litellm -n platform`.
 
 ### 8.2 Confirm the proxy is healthy
 
@@ -651,14 +471,14 @@ The proxy Deployment needs a restart to pick up the new secret value (`environme
 kubectl get applications -n argocd | grep litellm
 ```
 
-Should reach `Synced`/`Healthy` (the `litellm-db-bootstrap` `PreSync` hook creates the `litellm` Postgres role/database before the chart's own migration Job runs — no manual DB step, same shape as Temporal's namespace bootstrap).
+Should reach `Synced`/`Healthy` (a `PreSync` hook creates the `litellm` Postgres role/database automatically). Then:
 
 ```bash
-curl -s http://litellm.platform.svc.cluster.local:4000/health/readiness   # from in-cluster
-curl -I https://litellm.lab                                               # from an admin machine, after 3.2's DNS step
+curl -s http://litellm.platform.svc.cluster.local:4000/health/readiness   # in-cluster
+curl -I https://litellm.lab                                               # after Phase 3.2 DNS
 ```
 
-Mint a virtual key to confirm the admin API works (needs the real master key from `litellm-credentials`):
+Mint a virtual key to confirm the admin API works (master key is in `litellm-credentials`):
 
 ```bash
 curl -s -X POST https://litellm.lab/key/generate \
@@ -666,54 +486,35 @@ curl -s -X POST https://litellm.lab/key/generate \
   -d '{"models": ["zai-glm-4.6"], "max_budget": 1}'
 ```
 
-### 8.3 Endpoint contract for `agentops-engine`
-
-`agentops-engine`'s new `litellm` backend (M5 sub-project 2) targets:
-
-```
-litellm.platform.svc.cluster.local:4000   # OpenAI-compatible, in-cluster only
-```
-
-Model routing entries for this backend use the LiteLLM-side alias, not a raw provider string — `zai-glm-4.6`, not `zai/glm-4.6`. Adding a second provider later (OpenRouter, direct Anthropic) is a `model_list` entry in this component's `values.yaml`, not an `agentops-engine` change.
+The in-cluster endpoint the engine targets is `litellm.platform.svc.cluster.local:4000` (OpenAI-compatible). Model routing uses the LiteLLM-side alias (`zai-glm-4.6`, not `zai/glm-4.6`); adding a provider is a `model_list` entry in this component's `values.yaml`.
 
 ---
 
-## Phase 9 — `agentops_engine` database and size monitoring
+## Phase 9 — Engine database and size monitoring
 
-`postgres` syncs the `agentops_engine` database automatically at Phase 2 (`postgres/initdb-configmap.yaml`) — no manual step on fresh installs, same mechanism as `temporal_visibility`. **Caveat on this repo's live cluster:** initdb scripts only run against an *empty* data directory, so on an already-bootstrapped cluster the database will **not** appear from initdb alone. The `agent-stats-db-bootstrap` Job (`clusters/ops/platform/postgres/agent-stats-db-bootstrap-job.yaml`) renames the legacy `agent_run_stats` database to `agentops_engine` on sync, then creates `agentops_engine` if still missing — **merge this PR before** `agentops-engine` PR #7 (managed project registry data layer), which switches the worker to `ENGINE_DB_NAME=agentops_engine`.
+`postgres` creates the `agentops_engine` database automatically on fresh installs (`postgres/initdb-configmap.yaml`). On an **already-bootstrapped** cluster initdb won't run again — the `agent-stats-db-bootstrap` Job (`clusters/ops/platform/postgres/agent-stats-db-bootstrap-job.yaml`) handles that case on sync: it renames the legacy `agent_run_stats` database if present, then creates `agentops_engine` if still missing.
 
-If you need to run the rename manually before ArgoCD syncs (safe and idempotent):
+`postgres-exporter` also syncs automatically, reusing `postgres-credentials`. The worker creates its own tables inside `agentops_engine` at startup — nothing to do once the database exists.
 
-```bash
-kubectl exec -n platform postgres-postgresql-0 -- \
-  psql -U temporal -d temporal -c "ALTER DATABASE agent_run_stats RENAME TO agentops_engine;"
-```
-
-`postgres-exporter` also syncs automatically at Phase 2 with no manual step — it reuses the existing `postgres-credentials` secret, same as `postgres`/`temporal` themselves.
-
-`agentops-engine`'s worker creates its own `agent_run_stats` table (and `managed_projects`) inside `agentops_engine` at startup (idempotent `CREATE TABLE IF NOT EXISTS`) — nothing to do here once the database itself exists.
-
-### 9.1 Confirm size metrics are flowing
+Confirm size metrics are flowing:
 
 ```bash
 kubectl get applications -n argocd | grep postgres-exporter   # expect Synced/Healthy
 ```
 
-Open `https://grafana.lab` → Explore → Prometheus datasource, query `pg_database_size_bytes` (every database on the shared instance) or `pg_stat_user_tables_n_live_tup{relname="agent_run_stats"}` (row count in the stats table) to confirm the exporter is actually scraped. A dedicated dashboard panel for either is sub-project 4, not this phase — the metric being queryable here is what "monitor the data's size" means at this stage.
+In Grafana → Explore → Prometheus, query `pg_database_size_bytes` or `pg_stat_user_tables_n_live_tup{relname="agent_run_stats"}`.
 
 ---
 
 ## Rebuild from scratch
 
-Disaster recovery = new host + same three assets:
+Disaster recovery = new host + the same three assets:
 
 1. **Age private key** (offline backup)
 2. **This repo** at `main` (including SOPS secrets)
-3. **Postgres backup** (`pg_dump` — set up separately; not automated in M2)
+3. **Postgres backup** (`pg_dump` — set up separately; not yet automated)
 
-Steps: provision host → Phase 1 bootstrap with backed-up age key → ArgoCD re-syncs everything from git. Restore Postgres from dump if you need historical Temporal data.
-
-Target time: ~30 minutes for infra; longer if restoring large DB backups.
+Steps: provision host → Phase 1 bootstrap with the backed-up age key → ArgoCD re-syncs everything from git. Restore Postgres from dump if you need historical Temporal data. Target time: ~30 minutes for infra.
 
 ---
 
@@ -730,11 +531,11 @@ kubectl -n argocd get secret sops-age
 
 ### postgres stuck on Unknown — ksops plugin not found
 
-Error looks like `Failed to load target state: ... unable to find plugin root - tried: ...`. This means the `install-ksops` init container ran fine (binaries exist at `/usr/local/bin/kustomize`/`/usr/local/bin/ksops`), but that's a *different* lookup than the one kustomize's generator loader actually uses for `apiVersion: viaduct.ai/v1, kind: ksops` (`postgres/secret-generator.yaml`) — it searches `$XDG_CONFIG_HOME/kustomize/plugin/viaduct.ai/v1/ksops/ksops`, unrelated to `$PATH`. `argocd-values.yaml` mounts the `ksops` binary there too (in addition to `/usr/local/bin`) — if you still hit this on a from-scratch bootstrap, confirm that third `volumeMounts` entry is present on the live `argocd-repo-server` Deployment (`kubectl -n argocd get deploy argocd-repo-server -o yaml`); if it's missing, the ArgoCD Helm release predates this fix and needs `helm upgrade` to pick it up (a plain `bootstrap.sh` re-run doesn't touch it, since ArgoCD install is idempotent-skip once already installed).
+Error looks like `Failed to load target state: ... unable to find plugin root - tried: ...`. The `install-ksops` init container ran fine (binaries exist at `/usr/local/bin/`), but kustomize's generator loader for `apiVersion: viaduct.ai/v1, kind: ksops` searches `$XDG_CONFIG_HOME/kustomize/plugin/viaduct.ai/v1/ksops/ksops` — unrelated to `$PATH`. `bootstrap/argocd-values.yaml` mounts the `ksops` binary there too. If you hit this on a from-scratch bootstrap, confirm that third `volumeMounts` entry is present on the live `argocd-repo-server` Deployment (`kubectl -n argocd get deploy argocd-repo-server -o yaml`); if it's missing, the ArgoCD Helm release predates the fix and needs a `helm upgrade` (a plain `bootstrap.sh` re-run skips ArgoCD once installed).
 
 ### Application `Unknown` / `ComparisonError`
 
-Usually render failure — bad YAML, missing encrypted secret, or helm chart pull error:
+Usually a render failure — bad YAML, missing encrypted secret, or chart pull error:
 
 ```bash
 kubectl -n argocd get application <name> -o yaml
@@ -747,11 +548,11 @@ Reproduce locally:
 kustomize build --enable-helm clusters/ops/platform/<component>
 ```
 
-(Postgres and Grafana require the encrypted secret file and KSOPS plugin locally.)
+(Postgres and Grafana additionally need the encrypted secret file and the KSOPS plugin locally.)
 
 ### step-ca ACME / cert-manager issues
 
-`ClusterIssuer` uses `skipTLSVerify: true` until step-ca root is trusted by cert-manager. Check cert-manager logs:
+The `ClusterIssuer` uses `skipTLSVerify: true` until the step-ca root is trusted by cert-manager. Check cert-manager logs:
 
 ```bash
 kubectl logs -n cert-manager deploy/cert-manager -f
@@ -759,15 +560,4 @@ kubectl logs -n cert-manager deploy/cert-manager -f
 
 ### NetworkPolicy not enforcing
 
-k3s default CNI (flannel) does **not** enforce `NetworkPolicy`. The `dev-agents` policy documents intent only until you swap to Cilium/Calico. See platform-components design doc.
-
----
-
-## What comes next (out of scope for this doc)
-
-- Model tokens and forge secrets under `secrets/` beyond what Phase 6 needs
-- LiteLLM, GlitchTip — the Alloy/LGTM stack and MailPit ship as of Phase 7 (M4 sub-project 1); these two remain M5/M6+
-- Grafana dashboards, Mission Control — M4 sub-projects 4–5, not this doc. `agentops_engine` itself ships as of Phase 9 (M4 sub-project 3).
-- `pi`/`cursor`/`codex` agent-runner images — M2 ships `claude` only
-
-See [BOOTSTRAP.md](BOOTSTRAP.md) steps 6–9 for the full M2 roadmap.
+k3s's default CNI (flannel) does **not** enforce `NetworkPolicy`. The `dev-agents` policy documents intent only until the CNI is swapped for Cilium/Calico.
