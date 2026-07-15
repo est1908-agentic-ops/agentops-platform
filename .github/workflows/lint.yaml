@@ -13,7 +13,7 @@ jobs:
       - name: shellcheck
         run: >-
           docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable
-          shellcheck bootstrap/bootstrap.sh scripts/validate-manifests.sh
+          bootstrap/bootstrap.sh scripts/validate-manifests.sh
 
   manifests:
     # Static manifest checks that need no secrets: SSH-only repoURLs and that every
