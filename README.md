@@ -35,7 +35,6 @@ Merging a PR to `main` is what changes the cluster; there is no other path.
 |-----------|------|
 | Temporal + PostgreSQL | Durable execution engine for all agent workflows |
 | Engine (worker, gateway, console) | The Agentic Ops application itself — agents run as k8s Jobs |
-| LiteLLM | One gateway for all model providers |
 | Alloy → Loki / Tempo / Prometheus, Grafana | Logs, traces, metrics, dashboards |
 | cert-manager + step-ca + Let's Encrypt | Internal CA for `*.lab` hosts, real certs for public ones |
 | Technitium | DNS for the internal zone |

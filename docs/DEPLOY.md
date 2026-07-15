@@ -11,9 +11,8 @@ For the design rationale behind these steps, see [BOOTSTRAP.md](BOOTSTRAP.md). T
 - k3s (Traefik bundled) + ArgoCD with KSOPS-decrypted SOPS secrets
 - Platform components: cert-manager, step-ca, Let's Encrypt issuer, Technitium DNS, Postgres, Temporal, the `dev-agents` namespace
 - Observability: Prometheus, Loki, Tempo, Alloy, Grafana, MailPit (Phase 7)
-- LiteLLM gateway (Phase 8)
 - `agentops_engine` database + postgres-exporter for size monitoring (Phase 9)
-- Internal hostnames, e.g. `temporal.lab`, `grafana.lab`, `mail.lab`, `litellm.lab` (Ingress + step-ca certs)
+- Internal hostnames, e.g. `temporal.lab`, `grafana.lab`, `mail.lab` (Ingress + step-ca certs)
 
 Everything after bootstrap is GitOps — no further `kubectl apply` for platform components.
 
@@ -167,7 +166,7 @@ Expect:
 
 - ArgoCD pods `Running`
 - Application `root` present and moving toward `Synced` / `Healthy`
-- Child Applications appearing: `cert-manager`, `step-ca`, `letsencrypt`, `technitium`, `postgres`, `temporal`, `namespaces`, `prometheus`, `loki`, `tempo`, `alloy`, `grafana`, `mailpit`, `litellm`, `postgres-exporter`
+- Child Applications appearing: `cert-manager`, `step-ca`, `letsencrypt`, `technitium`, `postgres`, `temporal`, `namespaces`, `prometheus`, `loki`, `tempo`, `alloy`, `grafana`, `mailpit`, `postgres-exporter`
 - `grafana` stays `Degraded`/`Unknown` until its encrypted credentials exist — see [Phase 7](#phase-7--deploy-the-observability-stack); same dependency shape as `postgres`
 
 Watch until stable:
@@ -445,52 +444,7 @@ The in-cluster OTLP endpoint the engine exports to is `alloy.platform.svc.cluste
 
 ---
 
-## Phase 8 — Deploy LiteLLM
-
-`litellm-credentials` and `litellm-db-credentials` ship encrypted in this repo. `litellm-provider-keys` may contain `CHANGEME` placeholders for provider keys — the proxy syncs `Healthy` either way, but calls routed to that provider fail auth until the real key is set. Design doc: [litellm deploy](superpowers/specs/2026-07-07-litellm-deploy-design.md).
-
-### 8.1 Set real provider API keys
-
-```bash
-export SOPS_AGE_KEY_FILE=/path/to/age.key
-
-sops secrets/litellm/litellm-provider-keys.enc.yaml
-# replace CHANGEME with the real key, save and exit — sops re-encrypts in place
-
-git add secrets/litellm/litellm-provider-keys.enc.yaml
-git commit -m "chore: set litellm provider keys"
-git push origin main
-```
-
-The proxy Deployment needs a restart to pick up new secret values:
-`kubectl rollout restart deployment/litellm -n platform`.
-
-### 8.2 Confirm the proxy is healthy
-
-```bash
-kubectl get applications -n argocd | grep litellm
-```
-
-Should reach `Synced`/`Healthy` (a `PreSync` hook creates the `litellm` Postgres role/database automatically). Then:
-
-```bash
-curl -s http://litellm.platform.svc.cluster.local:4000/health/readiness   # in-cluster
-curl -I https://litellm.lab                                               # after Phase 3.2 DNS
-```
-
-Mint a virtual key to confirm the admin API works (master key is in `litellm-credentials`):
-
-```bash
-curl -s -X POST https://litellm.lab/key/generate \
-  -H "Authorization: Bearer $MASTER_KEY" -H "Content-Type: application/json" \
-  -d '{"models": ["zai-glm-4.6"], "max_budget": 1}'
-```
-
-The in-cluster endpoint the engine targets is `litellm.platform.svc.cluster.local:4000` (OpenAI-compatible). Model routing uses the LiteLLM-side alias (`zai-glm-4.6`, not `zai/glm-4.6`); adding a provider is a `model_list` entry in this component's `values.yaml`.
-
----
-
-## Phase 9 — Engine database and size monitoring
+## Phase 8 — Engine database and size monitoring
 
 `postgres` creates the `agentops_engine` database automatically on fresh installs (`postgres/initdb-configmap.yaml`). On an **already-bootstrapped** cluster initdb won't run again — the `agent-stats-db-bootstrap` Job (`clusters/ops/platform/postgres/agent-stats-db-bootstrap-job.yaml`) handles that case on sync: it renames the legacy `agent_run_stats` database if present, then creates `agentops_engine` if still missing.
 
