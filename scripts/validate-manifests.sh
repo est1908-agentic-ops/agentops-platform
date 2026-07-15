@@ -53,6 +53,16 @@ while IFS= read -r gen; do
 done < <(find clusters -name secret-generator.yaml | sort)
 
 echo
+echo "== check 3: retired model gateway is absent from deployable manifests =="
+if matches=$(rg -n -i 'lite[ -]?llm|litellm' clusters/ops secrets -g '!**/.git/**' | grep -v 'cleanup'); then
+  echo "ERROR: retired model gateway reference(s) found:" >&2
+  echo "$matches" >&2
+  fail=1
+else
+  echo "OK: no retired model gateway references"
+fi
+
+echo
 if [ "$fail" -eq 0 ]; then
   echo "All manifest checks passed."
 else

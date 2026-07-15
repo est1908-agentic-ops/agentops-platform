@@ -15,7 +15,6 @@ resources:
   - platform/alloy/application.yaml
   - platform/grafana/application.yaml
   - platform/mailpit/application.yaml
-  - platform/litellm/application.yaml
   - platform/postgres-exporter/application.yaml
   - engine-secrets/application.yaml
   - engine/application.yaml

@@ -9,7 +9,7 @@ metadata:
     # before that script landed (or still has the legacy agent_run_stats name).
     # Without the database the engine worker's ensureSchema() crash-loops at
     # startup. This Job renames the legacy database on existing clusters and
-    # creates agentops_engine idempotently, mirroring the litellm-db-bootstrap Job.
+    # creates agentops_engine idempotently, alongside the other database hooks.
     #
     # This is a NORMAL (Sync-phase) resource, deliberately NOT an argocd hook.
     # A hook is invisible to ArgoCD's live-vs-desired diff, so adding one to an
