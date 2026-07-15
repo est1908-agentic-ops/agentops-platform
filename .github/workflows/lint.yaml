@@ -10,10 +10,10 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v5
-      - name: Ensure shellcheck is installed
-        run: command -v shellcheck || (sudo apt-get update && sudo apt-get install -y shellcheck)
       - name: shellcheck
-        run: shellcheck bootstrap/bootstrap.sh scripts/validate-manifests.sh
+        run: >-
+          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable
+          shellcheck bootstrap/bootstrap.sh scripts/validate-manifests.sh
 
   manifests:
     # Static manifest checks that need no secrets: SSH-only repoURLs and that every
