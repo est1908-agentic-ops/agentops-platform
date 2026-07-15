@@ -60,9 +60,10 @@ Flip on GitHub's **Template repository** setting for this repo. "Use this templa
 | age recipient | `.sops.yaml` (`age1x5del8…` — already labeled a placeholder) | *(documented blank)* |
 | Public base domain | `letsencrypt/cluster-issuer.yaml`; `engine/values.yaml` (`gateway.ingress.host`, `control.ingress.host`, `temporalUiBaseUrl`); `grafana` ingress host (`agentic-ops.est1908.top` + `console.`/`grafana.`/`temporal.` subdomains) | `__BASE_DOMAIN__` |
 | ACME email | `letsencrypt/cluster-issuer.yaml` (`artem.kireev@flair.hr`) | `__ACME_EMAIL__` |
-| Internal zone | `technitium`/`step-ca`/internal ingress hosts (`*.lab`) | default `.lab`; optional override |
 | Secrets | `secrets/**` (est1908's real SOPS blobs) | ship `*.example.yaml` shapes; adopter creates + encrypts real ones |
 | Engine artifact | `engine/application.yaml` (OCI `repoURL`), `engine/values.yaml` (`image.repository`), `project-workers/applicationset.yaml` (OCI `repoURL`) — all `gitactions.est1908.top/agentic-ops/...` | default → public registry (see §5) |
+
+The table lists **mandatory** blanks only. The internal zone (`.lab`) is *not* a blank: it ships as a working default (self-contained via Technitium + step-ca) and is documented in `docs/CUSTOMIZE.md` as an optional override.
 
 **Secret scaffolding:** the template must **not** carry est1908's encrypted `secrets/**` (they are the personal lab's real material, and adopters cannot decrypt them anyway). Replace each `*.enc.yaml` with a `*.example.yaml` showing the shape with dummy values, keeping the directory structure (`.gitkeep`). `docs/CUSTOMIZE.md` documents creating and encrypting the real ones.
 
