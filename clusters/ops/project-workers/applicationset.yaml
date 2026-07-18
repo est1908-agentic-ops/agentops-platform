@@ -26,7 +26,7 @@ spec:
       source:
         repoURL: oci://gitactions.est1908.top/agentic-ops/project-worker
         chart: project-worker
-        targetRevision: "0.0.0-5a5b0e659b9f792d6d0f88095357518797979c40"
+        targetRevision: "0.0.0-2d66426ef58dfdf3aa4a1e7d403e8ba1aa05cdc5"
         helm:
           releaseName: '{{.project}}'
           # One templated `values` string, NOT valuesObject: ArgoCD does not
