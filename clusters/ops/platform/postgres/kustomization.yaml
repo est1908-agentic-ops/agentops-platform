@@ -12,11 +12,6 @@ resources:
   - service.yaml
   - statefulset.yaml
   - initdb-configmap.yaml
-  # Sync-phase Job that ensures agentops_engine exists on an already-bootstrapped
-  # cluster (initdb only covers fresh PGDATA). Renames legacy agent_run_stats on
-  # existing clusters, then creates agentops_engine if still missing.
-  - agent-stats-db-bootstrap-job.yaml
-  - litellm-cleanup-job.yaml
 
 # postgres-credentials Secret (KSOPS-decrypted). Consumed by both this
 # StatefulSet (POSTGRES_PASSWORD) and Temporal (existingSecret).

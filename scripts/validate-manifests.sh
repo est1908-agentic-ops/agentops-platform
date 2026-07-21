@@ -54,7 +54,7 @@ done < <(find clusters -name secret-generator.yaml | sort)
 
 echo
 echo "== check 3: retired model gateway is absent from deployable manifests =="
-if matches=$(rg -n -i 'lite[ -]?llm|litellm' clusters/ops secrets -g '!**/.git/**' | grep -v 'cleanup'); then
+if matches=$(rg -n -i 'lite[ -]?llm|litellm' clusters/ops secrets -g '!**/.git/**'); then
   echo "ERROR: retired model gateway reference(s) found:" >&2
   echo "$matches" >&2
   fail=1
