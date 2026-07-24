@@ -40,7 +40,7 @@ Turn `agentops-platform` into a distributable GitHub template that a stranger ca
 | Deploy-with-placeholders guard | A `.template` sentinel file + `scripts/check-customized.sh`, enforced by CI once the sentinel is gone |
 | Internal zone | `.lab` stays a working default (self-contained via Technitium + step-ca); optional override. Only the **public domain** is a mandatory token |
 | Engine source | Batteries-included from a **public registry** (agentops-engine-side prerequisite: publish to e.g. `ghcr.io/est1908-agentic-ops` instead of `gitactions.est1908.top`) |
-| Engine updates | **ArgoCD Image Updater + git write-back** per instance, replacing the agentops-engine → platform CI push. Digest strategy on a `stable` channel tag |
+| Engine updates | **ArgoCD Image Updater, `newest-build`, `argocd` (commit-free) write-back** per instance — no commits to platform repos; every instance auto-follows the latest engine. Built on homelab first, then baked into the template. Gated `stable` + public registry are adopter-facing refinements / fallback |
 
 ## Design
 
@@ -91,13 +91,14 @@ Onboarding step 0 is "delete `.template`," which flips enforcement on automatica
 
 **Source (batteries-included, public registry):** the template ships pointing at the upstream engine build so it works out of the box. Prerequisite, implemented in **agentops-engine**: publish engine + project-worker OCI artifacts to a public, reliably pullable registry (e.g. `ghcr.io/est1908-agentic-ops/*`) instead of the personal `gitactions.est1908.top`, and point the template defaults there. Until this lands, the template only resolves against est1908's box.
 
-**Updates (pull, not push):** replace the agentops-engine CI push (`scripts/bump-platform-engine-tags.sh` committing image tags + chart `targetRevision` into this repo on every merge) with **ArgoCD Image Updater**, deployed as a new platform component under `clusters/ops/platform/argocd-image-updater/`:
+**Updates (pull, commit-free):** retire the agentops-engine CI push (`scripts/bump-platform-engine-tags.sh`, which committed image tags + chart `targetRevision` into this repo on every merge) and replace it with **ArgoCD Image Updater**, deployed as a platform component under `clusters/ops/platform/argocd-image-updater/`. Built on **homelab first** (immediate relief from hand-merging engine bumps), then baked into the template as a parameterized component.
 
-- Annotate the `engine` Application to track its images with the **digest** strategy on a `stable` channel tag. Following a tag's digest needs no sortable versions — the engine just publishes and advances `stable`.
-- **Git write-back:** Image Updater commits the resolved digest into the cluster's **own** repo, using the ArgoCD repo PAT already registered for it. Result: auto-updates on a poll interval, git still records the exact deployed digest, `git revert` still rolls back, and each adopter's instance self-updates with no est1908 involvement.
-- **Engine-side prerequisite:** publish and advance a `stable` channel tag that CI only moves after its own gates pass (so a bad build does not auto-deploy). This makes auto-follow responsible for strangers; an adopter can still pin and disable the updater.
-
-**Open item (settle in the plan, with the engine changes):** Image Updater bumps image tags/digests, not the Helm *chart* `targetRevision`. Today the chart version and the four image tags move in lockstep (same git-sha). Either the chart also follows `stable` (floats, not git-pinned) while images are digest-pinned, or engine publishing collapses so a single moving reference drives both. Recommendation: collapse to one reference. Most churn is images (the recent git history is entirely "bump worker images"), so Image Updater captures the bulk of the value either way.
+- **Track all four engine images** (`worker`, `agent-runner`, `control`, `gateway` under `gitactions.est1908.top/agentic-ops`) with the **`newest-build`** strategy — the only viable strategy for the engine's random git-sha tags (it sorts by each image's registry `created` timestamp). Needs **zero engine-side change**: it reads the existing private registry with the existing `registry-credentials`.
+- **`argocd` (commit-free) write-back:** Image Updater patches the **live `engine` Application's Helm parameter overrides in-cluster** — **no commits to any platform repo**. Every instance polls the registry and updates *itself*, so all instances auto-follow the latest engine with no git touch and no est1908 involvement.
+- **Trade-off (accepted):** the running engine version lives in the live Application, not git. The repo's "git is the deployment history / `git revert` to roll back" rule therefore **does not apply to the engine version** (everything else still follows git). Engine rollback is imperative: pin a known-good sha in Image Updater (allow-tags / disable + set) or patch the Application's parameter. A bad build auto-deploys until pinned — acceptable for a homelab (fix-forward, or pin for minutes).
+- **Chart `targetRevision` stays git-pinned:** Image Updater updates image tags, not the OCI chart version. The chart (templates) is bumped manually on the rare chart-level change; images auto-follow. Caveat: if an engine image needs a matching chart change, the pinned chart can lag — the same team owns both, so coordinate that bump.
+- **Adopter-facing refinements / fallback:** a gated **`stable`** channel tag (engine CI advances it only after its gates pass) + a **public registry** make auto-follow responsible for strangers. These are also the **fallback** if `newest-build` cannot read `created` timestamps from `gitactions.est1908.top` — verified early in the plan.
+- **Retire the cross-repo bump only after Image Updater is proven on homelab**, so the current manual-merge fallback survives the transition. If `newest-build` fails, keep the bump (and the manual merge) while pivoting to the gated-`stable` path.
 
 ### 6. Personal-lab fork-out
 
@@ -113,22 +114,24 @@ Ordering is load-bearing: migrate first, scrub second, so the live cluster is ne
 
 - **Adopter deploys with placeholders unfilled** → `check-customized.sh` (CI, once `.template` is deleted) fails the build before the manifests reach a cluster. The `.template` sentinel makes the template repo itself exempt.
 - **Template repo's own CI** → green with placeholders present, because `.template` is present and the check skips. No false failures on the canonical template.
-- **Engine `stable` ships a bad build** → auto-deploys, but Image Updater wrote the digest to git, so recovery is one `git revert`; `stable` only advances after engine CI gates; adopters can pin + disable the updater.
+- **A bad engine build auto-deploys** → recovery is imperative (pin the sha in Image Updater / patch the Application's parameter), not `git revert`, since the engine version isn't in git. Fix-forward is usually faster on a homelab. A gated `stable` channel removes the exposure for adopters.
 - **Public engine registry down / not yet migrated** → engine pulls fail; platform components (public Helm charts) still reconcile. This is the batteries-included coupling, mitigated by using a reliable public registry (the prerequisite).
 - **Scrub breaks the personal lab** → prevented by sequencing: the lab is migrated to `agentops-platform-homelab` and verified healthy *before* the scrub touches this repo.
-- **Image Updater lacks git write access** → it uses the same repo PAT ArgoCD already carries for the instance's private repo; misconfiguration surfaces as failed write-back commits, visible in its logs, with the last good digest still in git.
+- **Image Updater can't reach the registry** → it can't discover newer images, so the last-applied engine version keeps running (no disruption). Surfaces in its logs; the gated-`stable` / public-registry path is the fallback.
+- **`newest-build` can't read `created` timestamps from `gitactions.est1908.top`** → no auto-updates; caught by the plan's early verification. Fallback: keep the cross-repo bump + manual merge and pivot the engine to a gated `stable` tag (digest strategy).
 
 ## Verification
 
 - **Template self-check:** with `.template` present, CI is green while placeholders remain; `scripts/check-customized.sh` reports "template not customized."
 - **Round-trip:** clone the template → delete `.template` → run the `customize-instance` skill (and separately the manual runbook) with test values → create dummy secrets from `*.example.yaml` → `check-customized.sh` passes (no tokens left) → `scripts/validate-manifests.sh` passes → a throwaway bootstrap reaches all Applications `Synced/Healthy` (or at minimum ArgoCD renders every Application).
 - **Personal-lab migration:** after re-point, `kubectl get applications -n argocd` shows all `Synced/Healthy` against `agentops-platform-homelab`; scrubbing this repo has no effect on the live cluster.
-- **Engine updates:** advancing `stable` to a new digest produces a write-back commit in the instance repo and a rolling redeploy; `git revert` of that commit rolls the engine back; a write attempt with the updater's creds is scoped to the instance repo only.
+- **Engine updates (commit-free):** Image Updater detects the newest build in the registry and patches the live `engine` Application's Helm parameters (no git commit anywhere); pods roll to the new sha. Rollback verified by pinning a prior sha and confirming the rollout reverts. Early check: confirm Image Updater reads `created` timestamps from `gitactions.est1908.top`.
 
 ## Rollout
 
-Three sub-projects, each getting its own implementation plan, in order:
+Sub-projects, each getting its own implementation plan, in order:
 
-1. **Personal-lab fork-out** — push current state to `agentops-platform-homelab`, re-point the live ArgoCD root-app + repo credential, verify healthy. Must precede everything; frees the live cluster from this repo before any scrub.
-2. **Template-ization of this repo** — introduce the `__TOKEN__` placeholders, replace `secrets/**` with `*.example.yaml`, add the `.template` sentinel + `scripts/check-customized.sh`, fix the CI runner, deploy ArgoCD Image Updater + git write-back and remove the cross-repo bump wiring, write the `customize-instance` skill, rewrite the docs, and flip on the GitHub template setting.
-3. **Engine public-registry migration** (agentops-engine side) — publish engine + project-worker artifacts to a public registry, publish and advance a `stable` channel tag, retire `scripts/bump-platform-engine-tags.sh`. Parallelizable with 2; the template is truly batteries-included only once this lands.
+1. **Personal-lab fork-out** — ✅ **done** (2026-07-23). The live cluster now syncs from `agentops-platform-homelab`; this repo is free to become the template.
+2. **Homelab engine auto-update** — deploy ArgoCD Image Updater on homelab (`newest-build`, all four images, **`argocd` commit-free write-back**), verify it detects and rolls a new build with imperative rollback, then **retire the cross-repo bump** in agentops-engine. Immediate priority — ends the manual bump-merging. Depends on `newest-build` reading `created` timestamps from `gitactions.est1908.top` (verified first; gated-`stable` is the fallback).
+3. **Template-ization of this repo** — introduce the `__TOKEN__` placeholders, replace `secrets/**` with `*.example.yaml`, add the `.template` sentinel + `scripts/check-customized.sh`, fix the CI runner, bake in Image Updater as a parameterized platform component (commit-free), write the `customize-instance` skill, rewrite the docs, and flip the repo **public** + enable the GitHub template setting.
+4. **Engine public-registry migration** (agentops-engine side) — publish engine + project-worker artifacts to a public registry and advance a gated `stable` channel tag. Makes the template batteries-included for outside adopters; parallelizable with 3.
