@@ -13,6 +13,17 @@ spec:
     path: clusters/ops
   destination:
     server: https://kubernetes.default.svc
+  # ArgoCD Image Updater writes the newest engine image sha into the `engine`
+  # child Application's Helm parameters (commit-free / argocd write-back). Those
+  # params are not in git, so without this root's selfHeal reverts them within
+  # seconds. Ignore that path on managed child Applications so the write sticks.
+  # NOTE: root is applied by bootstrap, not rendered by clusters/ops, so a git
+  # change here is dormant until the live root object is patched to match.
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      jsonPointers:
+        - /spec/sources/0/helm/parameters
   syncPolicy:
     automated:
       prune: true

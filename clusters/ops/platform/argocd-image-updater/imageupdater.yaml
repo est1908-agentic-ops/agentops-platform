@@ -1,0 +1,13 @@
+# v1.x of the argocd-image-updater controller is CRD-native and does not scan
+# Application annotations on its own. This CR is what activates the
+# argocd-image-updater.argoproj.io/* annotations set on the `engine` Application
+# (see clusters/ops/engine/application.yaml).
+apiVersion: argocd-image-updater.argoproj.io/v1alpha1
+kind: ImageUpdater
+metadata:
+  name: engine
+  namespace: argocd
+spec:
+  applicationRefs:
+    - namePattern: engine
+      useAnnotations: true
