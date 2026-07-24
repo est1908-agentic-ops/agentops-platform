@@ -1,0 +1,15 @@
+# ArgoCD Image Updater — commit-free engine auto-update (argocd write-back).
+# It watches the four engine images in the private registry and applies the
+# newest build's sha to the live `engine` Application's Helm parameters (see the
+# annotations on clusters/ops/engine/application.yaml, activated by imageupdater.yaml).
+# No git commits.
+config:
+  # newest-build reads each image's `created` timestamp from this registry.
+  # Credentials reuse the engine's dockerconfigjson pull secret cross-namespace
+  # (RBAC granted in registry-rbac.yaml). Chart key is the literal dotted `log.level`.
+  registries:
+    - name: gitactions
+      prefix: gitactions.est1908.top
+      api_url: https://gitactions.est1908.top
+      credentials: pullsecret:dev-agents/registry-credentials
+      default: true

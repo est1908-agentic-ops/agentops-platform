@@ -3,6 +3,25 @@ kind: Application
 metadata:
   name: engine
   namespace: argocd
+  annotations:
+    # ArgoCD Image Updater — commit-free (argocd write-back) auto-update of the
+    # four engine images to the newest build in the registry. Config lives in
+    # clusters/ops/platform/argocd-image-updater/ (activated by its ImageUpdater
+    # CR). Image tags only; the chart targetRevision below stays git-pinned.
+    argocd-image-updater.argoproj.io/image-list: >-
+      worker=gitactions.est1908.top/agentic-ops/worker,
+      agent-runner=gitactions.est1908.top/agentic-ops/agent-runner,
+      control=gitactions.est1908.top/agentic-ops/control,
+      gateway=gitactions.est1908.top/agentic-ops/gateway
+    argocd-image-updater.argoproj.io/write-back-method: argocd
+    argocd-image-updater.argoproj.io/worker.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/worker.helm.image-tag: image.workerTag
+    argocd-image-updater.argoproj.io/agent-runner.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/agent-runner.helm.image-tag: image.agentRunnerTag
+    argocd-image-updater.argoproj.io/control.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/control.helm.image-tag: image.controlTag
+    argocd-image-updater.argoproj.io/gateway.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/gateway.helm.image-tag: image.gatewayTag
 spec:
   project: default
   sources:

@@ -16,6 +16,7 @@ resources:
   - platform/grafana/application.yaml
   - platform/mailpit/application.yaml
   - platform/postgres-exporter/application.yaml
+  - platform/argocd-image-updater/application.yaml
   - engine-secrets/application.yaml
   - engine/application.yaml
   - project-workers-secret/application.yaml
